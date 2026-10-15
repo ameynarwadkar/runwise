@@ -1,0 +1,12 @@
+.env
+.venv/
+.traceloop/
+__pycache__/
+build/
+*.pyc
+*.db
+*.sqlite3
+!data/fixtures/*.sql
+results/eval_runs/*.jsonl
+.pytest_cache/
+docs/
