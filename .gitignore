@@ -9,4 +9,3 @@ build/
 !data/fixtures/*.sql
 results/eval_runs/*.jsonl
 .pytest_cache/
-docs/
