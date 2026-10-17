@@ -71,7 +71,7 @@
                         "type": "prometheus",
                         "uid": "Prometheus"
                     },
-                    "expr": "sum(rate(runwise_http_requests_total[1m])) or vector(0)",
+                    "expr": "sum(rate(runwise_http_requests_total{endpoint=\"/v1/agent/run\"}[1m])) or vector(0)",
                     "legendFormat": "RPS",
                     "refId": "A"
                 }
@@ -137,7 +137,7 @@
                         "type": "prometheus",
                         "uid": "Prometheus"
                     },
-                    "expr": "((sum(rate(runwise_http_requests_total{status_code=~\"5..\"}[1m])) or vector(0)) / (sum(rate(runwise_http_requests_total[1m])) > 0) * 100) or vector(0)",
+                    "expr": "((sum(rate(runwise_http_requests_total{endpoint=\"/v1/agent/run\",status_code=~\"5..\"}[1m])) or vector(0)) / (sum(rate(runwise_http_requests_total{endpoint=\"/v1/agent/run\"}[1m])) > 0) * 100) or vector(0)",
                     "legendFormat": "Error Rate",
                     "refId": "A"
                 }
@@ -265,7 +265,7 @@
                         "type": "prometheus",
                         "uid": "Prometheus"
                     },
-                    "expr": "runwise_active_sessions",
+                    "expr": "max(runwise_active_sessions) or vector(0)",
                     "legendFormat": "Active Sandboxes",
                     "refId": "A"
                 }
@@ -594,5 +594,5 @@
     "timezone": "browser",
     "title": "Runwise Agent Operations Dashboard",
     "uid": "runwise-agent-ops",
-    "version": 1
+    "version": 2
 }

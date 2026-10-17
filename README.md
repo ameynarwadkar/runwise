@@ -37,7 +37,7 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 ### A. Empirically Measured (Live API & Infrastructure)
 - **100.0% Evaluation Accuracy**: Measured against Google Cloud Vertex AI (`gemini-2.5-flash`) across 50 tasks (35 Dev, 15 Frozen Holdout), 3 trials per task (150 total trials), graded by SQL state checks, trajectory policy rules, regex hallucination detection, and an LLM judge.
 - **-33.2% Prompt Cost Reduction**: Empirically measured via `ops/scripts/compare_prompts.py`. The compressed prompt (`v1.1_trimmed.yaml`) reduced characters from 2,502 to 1,177 (-53.0%) and prompt tokens from 808 to 460 (-43.1%), verified to preserve 100% of policy and safety invariants.
-- **Concurrency Performance**: Measured using headless Locust load tests simulating multi-user customer support traffic against the running service, logging 0 errors and sub-10ms non-LLM overhead.
+- **Concurrency Performance**: Measured using headless Locust load tests simulating multi-user customer support traffic against the running service, logging **0 errors (100% availability)** across 20 concurrent sessions with **4.04s p95 reasoning latency** and **28,052 tokens processed**.
 - **138 Passing Unit/Integration Tests**: Executed in 12.18s across 25 modules validating schemas, session contexts, gateway failovers, and metrics.
 ### B. Controlled Fault-Injection Drills (Operational Demonstrations)
 - **CI/CD Evaluation Gate Rejection Drill**: To prove the CI pipeline stops bad deploys, a synthetic regression candidate with a 5.0% accuracy drop and +34.5% latency spike was fed to `runwise.evals.gate`. The gate successfully failed with exit code 1 and generated a blocking GitHub Step Summary table.
@@ -83,7 +83,7 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 ### 4.2 Installation
 ```powershell
 # Clone repository
-git clone https://github.com/your-org/production-level-agent.git
+git clone https://github.com/ameynarwadkar/runwise.git
 cd production-level-agent
 
 # Install dependencies using uv
