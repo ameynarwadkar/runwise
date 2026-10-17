@@ -60,3 +60,12 @@ def test_information_barrier_integrity():
         assert "SELECT " not in task.user_prompt.upper()
         assert "FROM orders" not in task.user_prompt.lower()
         assert "FROM refunds" not in task.user_prompt.lower()
+
+
+def test_dataset_ci_split():
+    """Verify CI split returns a stratified subset of 5 tasks (1 per category)."""
+    ci_tasks = load_tasks(split="ci")
+    assert len(ci_tasks) == 5
+    categories = {t.category for t in ci_tasks}
+    assert categories == {"cancellation", "refund", "address_update", "inquiry", "adversarial"}
+    assert all(t.split == "dev" for t in ci_tasks)

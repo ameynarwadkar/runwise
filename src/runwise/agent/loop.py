@@ -26,12 +26,18 @@ from runwise.observability.tracer import trace_span
 # Path to the versioned system prompt template
 PROMPT_PATH = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "agent" / "v1.0.yaml"
 
+# Path to versioned prompts directory
+PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "agent"
 
-def _load_system_prompt() -> str:
+def _load_system_prompt(version: str = "v1.0") -> str:
     """Loads the system prompt from the versioned YAML configuration."""
-    if not PROMPT_PATH.exists():
+    clean_ver = version if version.endswith(".yaml") else f"{version}.yaml"
+    target = PROMPTS_DIR / clean_ver
+    if not target.exists():
+        target = PROMPTS_DIR / "v1.0.yaml"
+    if not target.exists():
         return "You are a customer support agent. Help customers accurately."
-    config = yaml.safe_load(PROMPT_PATH.read_text(encoding="utf-8"))
+    config = yaml.safe_load(target.read_text(encoding="utf-8"))
     return config.get("system_prompt", "You are a customer support agent.")
 
 
@@ -67,17 +73,20 @@ class AgentLoop:
         self,
         model: str | None = None,
         temperature: float = 0.0,
-        max_steps: int = 8,
+        max_steps: int = 10,
+        system_prompt: str | None = None,
+        prompt_version: str = "v1.0",
+        gateway: str | None = None,
         api_key: str | None = None,
-        gateway: Any | None = None,
-    ) -> None:
+    ):
         cfg = get_provider_config(override_model=model)
         self.model = cfg.model_identifier
         self.temperature = temperature
         self.max_steps = max_steps
-        self.api_key = cfg.api_key or api_key
-        self.system_prompt = _load_system_prompt()
+        self.prompt_version = prompt_version
+        self.system_prompt = system_prompt or _load_system_prompt(prompt_version)
         self.gateway = gateway
+        self.api_key = cfg.api_key or api_key
 
     def run(
         self,

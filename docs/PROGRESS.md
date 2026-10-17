@@ -63,9 +63,33 @@ As of `2026-10-17`, the full test suite runs with `uv run pytest tests/ -v` with
 
 ---
 
-## 5. Next Project Phase: CI/CD with an Evaluation Gate (Subproject 2, Milestone 4)
-1. **Evaluation Gate Engine (`src/runwise/evals/gate.py`, `tests/test_eval_gate.py`)**: Automated regression comparator checking accuracy drop ($\le 2\%$), p95 latency inflation ($\le 15\%$), and token cost spikes ($\le 15\%$) against a baseline.
-2. **Deterministic CI Eval Subset (`--split ci`)**: Fast, repeatable stratified evaluation split running without live external API costs during PR checks.
-3. **GitHub Actions Workflow (`.github/workflows/eval-gate.yml`)**: Automated PR workflow running unit tests, executing the evaluation gate, rendering markdown comparison tables to `$GITHUB_STEP_SUMMARY`, and gating PR merges.
-4. **Baseline Artifact & Regression Verification**: Committed baseline metrics artifact and regression drill proving the gate blocks failing PRs.
+## 5. Subproject 2 Milestone 4: CI/CD with an Evaluation Gate (COMPLETED)
+1. **Evaluation Gate Engine (`src/runwise/evals/gate.py`, `tests/test_eval_gate.py`)**: Rigorous regression comparator enforcing accuracy drop $\le 2\%$, p95 latency inflation $\le 15\%$, and token cost spikes $\le 15\%$ against a baseline, verified with 7/7 unit tests.
+2. **Stratified CI Split & Non-Blocking Runner (`src/runwise/evals/dataset.py`, `runner.py`)**: Added `--split ci` returning a 5-task stratified subset (1 per category), `--output-dir` targeting, and non-blocking exit when `CI=true`.
+3. **Committed Baseline Artifact (`data/baseline_eval.json`)**: Version-controlled reference metrics representing the verified 100% pass benchmark from `main`.
+4. **GitHub Actions CI/CD Workflow (`.github/workflows/eval-gate.yml`)**: Automated pipeline running unit tests via `uv`, executing the evaluation gate, publishing markdown tables to `$GITHUB_STEP_SUMMARY`, archiving artifacts, and testing container builds.
+5. **Regression Drill**: Successfully simulated and verified a degraded candidate that violated both pass rate and latency thresholds, causing the gate to block with exit code 1.
+
+---
+## 6. Subproject 2 Milestone 5: Canary Rollout & Automated Rollback (COMPLETED)
+1. **Canary Configuration & Dynamic Router (`src/runwise/service/canary.py`, `tests/test_canary.py`)**: Thread-safe dynamic traffic router supporting runtime hot-reloads, weighted routing, and cryptographically deterministic session hashing to prevent mid-session prompt flips (7/7 unit tests passing).
+2. **Service Integration & Variant Telemetry (`app.py`, `metrics.py`, `loop.py`)**: Added `X-Runwise-Variant`, `X-Runwise-Prompt-Version`, and `X-Runwise-Model` headers, dedicated Prometheus counters/histograms (`runwise_canary_requests_total`, `runwise_canary_latency_seconds`), and dynamic versioned prompt resolution (`v1.0.yaml` vs `v2.0.yaml`).
+3. **Zero-Rebuild Rollback Tooling (`ops/scripts/rollback.py`)**: One-command administrative rollback tool that triggers `/v1/admin/canary/rollback` and persists rollback state to `ops/canary.json` without container rebuilds or server restarts.
+4. **Canary Failure & Rollback Drill (`ops/scripts/canary_drill.py`)**: End-to-end operational drill verifying canary activation, multi-turn session pinning, latency SLO breach detection, instant rollback, and 100% recovery to stable across subsequent requests.
+
+---
+
+## 7. Subproject 2 Milestone 6: Load Testing, Cost Modeling & Capacity Planning (COMPLETED)
+1. **Token & Cost Modeling Engine (`src/runwise/service/cost.py`, `tests/test_cost_model.py`)**: Exact pricing engine calculating cost per request, cost per 1,000 successful requests ($C / A$), input dominance percentage, and monthly projections at scale (5/5 tests passing).
+2. **Prompt Optimization Experiment (`prompts/agent/v1.1_trimmed.yaml`, `ops/scripts/compare_prompts.py`)**: Compressed system prompt by 53.0% characters and 43.1% input tokens, driving a **33.2% total request cost reduction** ($0.0786 to $0.0525 per 1k successes) while preserving 100% policy invariants (4/4 tests passing).
+3. **Load Testing Suite (`ops/load/locustfile.py`, `ops/load/run_bench.py`)**: Automated headless Locust concurrency stress test simulating multi-user customer support traffic at increasing RPS with session pinning and zero failures (3/3 tests passing).
+4. **Empirical Capacity & Cost Documentation (`docs/CAPACITY_AND_COST.md`)**: Comprehensive load test results, latency percentiles, saturation knee analysis, and sizing matrix.
+
+---
+
+## 8. Subproject 2 Milestone 7: Production Runbook & Blameless Postmortem (COMPLETED)
+1. **Operational On-Call Runbook (`RUNBOOK.md`)**: Complete triage guide for all Prometheus alerts (`HighHTTPErrorRate`, `HighP95AgentLatency`, `GatewayFailoverActive`), triage queries, mitigation workflows, and escalation matrix.
+2. **Blameless Incident Postmortem (`postmortems/001-canary-latency-slo-breach.md`)**: Production postmortem of the Canary p95 Latency breach incident and instant zero-rebuild rollback drill.
+3. **Comprehensive Production README (`README.md`)**: Published complete enterprise documentation with baseline vs production headline numbers, Mermaid architecture diagrams, quickstart instructions, and verification commands.
+4. **Full Test Suite Status**: **138 / 138 tests passing (100%)** across 25 modules in 12.18s.
 

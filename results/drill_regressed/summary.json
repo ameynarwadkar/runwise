@@ -1,0 +1,15 @@
+{
+  "total_tasks": 5,
+  "total_trials": 5,
+  "overall_success_rate": 0.95,
+  "p95_latency_ms": 1950.0,
+  "mean_latency_ms": 1020.0,
+  "avg_tokens": 420.0,
+  "category_success_rates": {
+    "cancellation": 1.0,
+    "refund": 1.0,
+    "address_update": 1.0,
+    "inquiry": 1.0,
+    "adversarial": 1.0
+  }
+}

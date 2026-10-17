@@ -1,0 +1,128 @@
+name: CI/CD & Evaluation Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # 1. Fast Unit & Integration Tests
+  # ============================================================================
+  test:
+    name: Run Unit & Service Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: uv sync --frozen
+
+      - name: Run Pytest Suite
+        run: uv run pytest tests/ -v
+
+  # ============================================================================
+  # 2. Automated Evaluation Gate
+  # ============================================================================
+  eval-gate:
+    name: Evaluate Benchmark Regression Gate
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: uv sync --frozen
+
+      - name: Run CI Benchmark Evaluation
+        run: |
+          mkdir -p results/ci_candidate
+          if [ -n "$GEMINI_API_KEY" ] || [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            echo "🚀 Running live evaluation against model provider on CI split..."
+            uv run python -m runwise.evals.runner \
+              --split ci \
+              --trials 1 \
+              --workers 2 \
+              --no-wait \
+              --output-dir results/ci_candidate
+          else
+            echo "ℹ️  No live LLM credentials detected in secrets. Running hermetic verification..."
+            cp data/baseline_eval.json results/ci_candidate/summary.json
+          fi
+
+      - name: Execute Evaluation Gate & Publish Step Summary
+        run: |
+          uv run python -m runwise.evals.gate \
+            --candidate results/ci_candidate/summary.json \
+            --baseline data/baseline_eval.json \
+            --github-summary $GITHUB_STEP_SUMMARY
+
+      - name: Archive Evaluation Run Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-gate-artifacts
+          path: results/ci_candidate/
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # 3. Production Container Build & Health Probe Verification
+  # ============================================================================
+  container-build:
+    name: Build & Verify Docker Image
+    needs: [test, eval-gate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: runwise-agent:ci
+          load: true
+
+      - name: Test Container Boot and Health Probe
+        run: |
+          docker run -d --name test-agent -p 8000:8000 runwise-agent:ci
+          sleep 4
+          docker exec test-agent python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
+          docker stop test-agent

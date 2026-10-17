@@ -97,6 +97,23 @@ ACTIVE_SESSIONS = Gauge(
     "Number of active in-memory customer support sandboxes currently managed.",
 )
 
+# ============================================================================
+# CANARY & VARIANT TELEMETRY
+# ============================================================================
+CANARY_REQUESTS_TOTAL: Counter = Counter(
+    "runwise_canary_requests_total",
+    "Total requests processed partitioned by variant, model, and prompt version.",
+    ["variant", "model", "prompt_version", "status"],
+)
+
+CANARY_LATENCY_SECONDS: Histogram = Histogram(
+    "runwise_canary_latency_seconds",
+    "Request execution latency in seconds partitioned by variant and model.",
+    ["variant", "model"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0),
+)
+
+
 
 def get_metrics_payload(registry: CollectorRegistry = REGISTRY) -> tuple[bytes, str]:
     """

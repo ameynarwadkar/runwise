@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "weight": 0.0,
+  "stable_model": "mock-stable-model",
+  "stable_prompt_version": "v1.0",
+  "canary_model": "mock-canary-model",
+  "canary_prompt_version": "v2.0",
+  "rollback_p95_latency_threshold_ms": 3000.0,
+  "rollback_error_rate_threshold": 0.05
+}

@@ -78,3 +78,4 @@ class AgentRunResponse(BaseModel):
     latency_ms: float = Field(..., ge=0.0, description="Total execution time in milliseconds")
     model: str = Field(..., description="LiteLLM model identifier used for generation")
     prompt_version: str = Field(default="v1.0", description="Version of the system prompt template applied")
+    variant: str = Field(default="stable", description="Traffic routing variant ('stable' or 'canary')")

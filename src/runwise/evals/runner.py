@@ -51,6 +51,7 @@ def run_single_trial(
     model: str | None = None,
     temperature: float = 0.0,
     max_steps: int = 10,
+    prompt_version:str = "v1.0",
     mock_completions: list[Any] | None = None,
     mock_judge_response: str | None = None,
 ) -> tuple[TrialRecord, Trajectory]:
@@ -80,6 +81,7 @@ def run_single_trial(
             model=resolved_model,
             temperature=temperature,
             max_steps=max_steps,
+            prompt_version=prompt_version
         )
 
         trajectory = agent.run(
@@ -124,6 +126,7 @@ class EvaluationRunner:
         temperature: float = 0.0,
         n_trials: int = 1,
         workers: int = 4,
+        prompt_version:str = "v1.0",
         results_dir: Path | str = DEFAULT_RESULTS_DIR,
         mock_completions_map: dict[str, list[Any]] | None = None,
     ):
@@ -131,6 +134,7 @@ class EvaluationRunner:
         self.model = cfg.model_identifier 
         self.temperature = temperature
         self.n_trials = n_trials
+        self.prompt_version = prompt_version
         self.workers = workers
         self.results_dir = Path(results_dir)
         self.mock_completions_map = mock_completions_map or {}
@@ -166,6 +170,7 @@ class EvaluationRunner:
                     trial_idx=idx,
                     model=self.model,
                     temperature=self.temperature,
+                    prompt_version=self.prompt_version,
                     mock_completions=self.mock_completions_map.get(task.id),
                 ): (task, idx)
                 for task, idx in work_items
@@ -244,11 +249,14 @@ def main() -> None:
     phoenix_active = setup_phoenix_tracer()
     default_model = get_provider_config().model_identifier
     parser = argparse.ArgumentParser(description="Runwise Customer Support Agent Evaluation Harness")
-    parser.add_argument("--split", choices=["all", "dev", "frozen_holdout"], default="dev", help="Dataset split to evaluate")
+    parser.add_argument("--split", choices=["all", "dev", "frozen_holdout", "ci"], default="dev", help="Dataset split to evaluate")
     parser.add_argument("--trials", type=int, default=1, help="Number of trials per task (n)")
     parser.add_argument("--workers", type=int, default=4, help="Concurrent worker threads")
+    parser.add_argument("--prompt-version", type=str, default="v1.0", help="Prompt version template (e.g. v1.0, v1.1_trimmed, v2.0)")
     parser.add_argument("--model", type=str, default=default_model, help="LiteLLM model identifier")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of tasks for quick testing")
+    parser.add_argument("--output-dir", type=str, default=None, help="Custom directory to store run artifacts")
+    parser.add_argument("--no-wait", action="store_true", help="Exit immediately without waiting for Ctrl+C when Phoenix is active")
     args = parser.parse_args()
 
     split_filter = None if args.split == "all" else args.split
@@ -257,28 +265,38 @@ def main() -> None:
     if args.limit:
         tasks = tasks[:args.limit]
 
+    results_dir = Path(args.output_dir) if args.output_dir else DEFAULT_RESULTS_DIR
+
     runner = EvaluationRunner(
         model=args.model,
         n_trials=args.trials,
         workers=args.workers,
+        prompt_version=args.prompt_version,
+        results_dir=results_dir,
     )
     runner.run(tasks)
+
     if phoenix_active:
         from opentelemetry import trace
         tp = trace.get_tracer_provider()
         if hasattr(tp, "force_flush"):
             tp.force_flush()
 
-        print("🔭 Phoenix UI active at: http://localhost:6006")
-        print("👉 Press Ctrl+C in this terminal to shut down Phoenix server and exit...\n")
-        try:
-            import time
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nShutting down Phoenix server...\n")
-        finally:
+        is_ci = os.getenv("CI", "false").lower() in ("true", "1", "yes")
+        if not args.no_wait and not is_ci:
+            print("🔭 Phoenix UI active at: http://localhost:6006")
+            print("👉 Press Ctrl+C in this terminal to shut down Phoenix server and exit...\n")
+            try:
+                import time
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\nShutting down Phoenix server...\n")
+            finally:
+                shutdown_phoenix_tracer()
+        else:
             shutdown_phoenix_tracer()
+
 
 if __name__ == "__main__":
     main()

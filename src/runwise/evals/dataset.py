@@ -757,7 +757,7 @@ def load_tasks(
     Parameters:
     -----------
     path: Path to the tasks.jsonl file.
-    split: Optional filter ('dev' or 'frozen_holdout').
+    split: Optional filter ('dev', 'frozen_holdout', or 'ci').
     """
     target = Path(path)
     if not target.exists():
@@ -771,10 +771,23 @@ def load_tasks(
                 continue
             data = json.loads(line)
             task = Task(**data)
-            if split is None or task.split == split:
-                tasks.append(task)
+            tasks.append(task)
+
+    if split == "ci":
+        # Stratified CI subset: exactly 1 task per category from dev split
+        ci_tasks: list[Task] = []
+        seen_categories: set[str] = set()
+        for task in tasks:
+            if task.split == "dev" and task.category not in seen_categories:
+                ci_tasks.append(task)
+                seen_categories.add(task.category)
+        return ci_tasks
+
+    if split is not None:
+        tasks = [t for t in tasks if t.split == split]
 
     return tasks
+
 
 
 def validate_dataset(tasks: list[Task]) -> dict[str, Any]:
