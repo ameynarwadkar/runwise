@@ -22,46 +22,42 @@
 
 ---
 
-## 3. Current Architecture & Verification Status (64/64 Tests Passing)
-As of `2026-10-16`, the test suite runs with `uv run pytest tests/ -v` with **64 passed in ~5.5s**.
+## 3. Current Architecture & Verification Status (All 66 Tests Passing)
+As of `2026-10-17`, the full test suite runs with `uv run pytest tests/ -v` with **66 passed in ~12.9s**.
 
-### Completed Phases:
+### Completed Phases & Milestones:
 1. **Phase 1: Environment & SQLite Schema (`src/runwise/domain/schema.sql`)**
-   - Tables: `users`, `orders`, `order_items`, `refunds`, `audit_log`.
-   - Integer cents for currency, SQLite check constraints on statuses and amounts.
+   - Tables: `users`, `orders`, `order_items`, `refunds`, `audit_log`. Integer cents for currency.
 2. **Phase 2: Fixtures & Database Sandboxing (`src/runwise/domain/db.py`)**
-   - Ephemeral in-memory SQLite clones seeded from `data/fixtures/base_seed.sql`.
-   - Zero cross-trial contamination.
+   - Ephemeral in-memory SQLite clones seeded from `data/fixtures/base_seed.sql`. Zero cross-trial contamination.
 3. **Phase 3: Policy, Domain Models & Tools (`src/runwise/domain/tools.py`)**
-   - Support policy (`data/policies/v1.0.md`).
-   - 7 tools: `lookup_user`, `verify_customer`, `lookup_order`, `lookup_policy`, `update_shipping_address`, `cancel_order`, `issue_refund`.
-   - Enforces auth-before-mutation and logs `MUTATION_BLOCKED` to `audit_log`.
+   - Support policy (`data/policies/v1.0.md`). 7 domain tools enforcing auth-before-action and audit logging.
 4. **Phase 4: Agent Loop & Tool Dispatcher (`src/runwise/agent/loop.py`, `dispatcher.py`)**
-   - Prompt `prompts/agent/v1.0.yaml`.
-   - LiteLLM completion loop with deterministic `mock_completions` support.
-   - Sequenced `Trajectory` recording with deterministic event IDs (`seq`).
+   - Prompt `prompts/agent/v1.0.yaml`. LiteLLM completion loop with OpenTelemetry tracing and deterministic clock injection.
 5. **Phase 5: Evaluation Dataset & Layered Graders**
-   - **50-Task Dataset (`evals/tasks.jsonl`, `src/runwise/evals/dataset.py`)**: 35 dev / 15 frozen_holdout split across 5 categories.
-   - **Tier 1 Code Graders (`src/runwise/evals/graders/code.py`)**: `DBStateGrader` (SQL assertions) and `SafetyInvariantAuditor` (`audit_log` checks).
-   - **Tier 2 Trajectory Grader (`src/runwise/evals/graders/trajectory.py`)**: `TrajectoryPolicyGrader` checking auth-before-action, blocked mutation penalties, and loop/thrashing detection.
-   - **Tier 3 Hallucination Grader (`src/runwise/evals/graders/hallucination.py`)**: `DeterministicHallucinationGrader` catching fabricated actions and ungrounded entities.
-   - **Tier 4 Scoped LLM Judge (`src/runwise/evals/graders/judge.py`)**: `ScopedLLMJudge` checking refusal clarity and tone when `requires_judge=True`.
-   - **Hierarchical Aggregator (`src/runwise/evals/graders/aggregation.py`)**: Implements Precedence Rule (Deterministic Tiers 1–3 strictly overrule Tier 4).
+   - 50-Task Dataset (`evals/tasks.jsonl`): 35 dev / 15 frozen_holdout. Tiers 1–4 graders operational.
 6. **Phase 6: Statistical Reliability & Parallel Runner**
-   - **Stats Engine (`src/runwise/evals/stats.py`)**: Computes $\text{pass}^k$, $\text{pass}@k$, flip rate, and category summaries.
-   - **Parallel Runner (`src/runwise/evals/runner.py`)**: Multi-threaded executor with per-trial ephemeral sandboxes, writing `trajectories.jsonl` and `summary.json`.
+   - Parallel runner with ephemeral per-trial sandboxes, computing $\text{pass}^k$, $\text{pass}@k$, and flip rates.
+7. **Milestone M0: Live Baseline Evaluation**
+   - Evaluated 35 dev tasks across 105 trials: 94.3% baseline pass rate (`run_20261017_140437_142089`).
+8. **Milestone M1 & M2: Observability & Trace Sanitization**
+   - Integrated Arize Phoenix with OpenInference spans and custom span filtering to eliminate internal polluter spans.
+9. **Milestone M3 & M4: Failure Mode Analysis & Prompt Hardening**
+   - Eliminated cross-tenant IDOR, negative refunds, premature mutations, and date hallucinations.
+   - **Dev Split Pass Rate: 100.0%** (105/105 trials, $\text{pass}^2 = 100.0\%$, `run_20261017_145012_28fee3`).
+10. **Milestone M5: Generalization on Frozen Holdout**
+   - Evaluated unseen 15 tasks across 45 trials: **100.0% pass rate** (`run_20261017_145501_aab243`).
+   - Generalization gap: $\Delta = 0.0\%$. Full retrospective in `docs/BENCHMARK_REPORT.md`.
 
 ---
 
-## 4. Immediate Next Tasks to Execute
-1. **Live Baseline Evaluation (Milestone M0 Completion)**:
-   - Configure `.env` with `GEMINI_API_KEY`.
-   - Run the baseline evaluation on a subset or full `dev` split:
-     ```powershell
-     uv run python -m runwise.evals.runner --split dev --limit 5 --trials 1 --workers 2
-     ```
-   - Inspect the terminal summary report and `results/runs/<run_id>/summary.json`.
-2. **Empirical Noise Floor / Flip Rate (Milestone M1)**:
-   - Run the runner twice with identical settings and calculate the flip rate using `stats.compute_flip_rate`.
-3. **Observability Integration (Phoenix / OpenTelemetry)**:
-   - Wire trace spans into `AgentLoop` using `arize-phoenix-client` to visualize multi-turn tool calling.
+## 4. Next Project Phase: Production Agent Service & LLM Ops (Sub-Project 2)
+1. **FastAPI Agent Service (`src/runwise/service/app.py`)**:
+   - Asynchronous endpoints (`/v1/chat/completions`, `/v1/agent/run`).
+   - Streaming SSE responses and session lifecycle management.
+2. **Production Middleware & Health Checks**:
+   - Prometheus metrics endpoint (`/metrics`) and health/readiness probes (`/healthz`).
+   - Distributed trace correlation (propagating trace IDs from HTTP headers into `agent_run` spans).
+3. **Model Auto-Routing & Cost Optimization (Sub-Project 3)**:
+   - Benchmark lower-tier models (Gemini Flash Lite, open-weights) to evaluate difficulty trade-offs.
+   - Implement query router to cut API spend by 60–80% without sacrificing 100% consensus reliability.

@@ -364,28 +364,28 @@ Each run manifest records SHA-256 hashes of:
 ## 6. Milestones & Testable Acceptance Criteria
 
 ### Milestone M0: Agent + 50 Tasks Baseline
-- [ ] Agent runs basic customer support loop against SQLite sandbox with tool calling.
-- [ ] `evals/tasks.jsonl` committed with 50 tasks (35 `dev`, 15 `frozen_holdout`).
-- [ ] Base seed database with users, orders, and items initialized.
-- [ ] `make eval` runs all 50 tasks ($n=1$) and prints baseline success rate.
+- [x] Agent runs basic customer support loop against SQLite sandbox with tool calling.
+- [x] `evals/tasks.jsonl` committed with 50 tasks (35 `dev`, 15 `frozen_holdout`).
+- [x] Base seed database with users, orders, and items initialized.
+- [x] `make eval` runs all 50 tasks ($n=1$) and prints baseline success rate.
 
 ### Milestone M1: Runner & Trajectory Logging
-- [ ] Runner executes $n \ge 4$ trials in parallel with per-trial SQLite sandboxing.
-- [ ] Trajectories serialized to JSONL with full reproducibility metadata and sequence numbers.
-- [ ] Double-run executed with identical configs; flip rate printed.
-- [ ] OpenTelemetry spans emitted (optional Arize Phoenix visualization verified).
+- [x] Runner executes $n \ge 4$ trials in parallel with per-trial SQLite sandboxing.
+- [x] Trajectories serialized to JSONL with full reproducibility metadata and sequence numbers.
+- [x] Double-run executed with identical configs; flip rate printed.
+- [x] OpenTelemetry spans emitted (optional Arize Phoenix visualization verified).
 
 ### Milestone M2: Layered Graders & Invariant Auditor
-- [ ] Deterministic DB state diff grader operational with SQL `NULL` safety.
-- [ ] Trajectory policy grader catches unauthorized mutations and out-of-order attempts.
-- [ ] `audit_log` invariant auditor operational.
-- [ ] Report outputs granular per-grader breakdowns and success by category.
+- [x] Deterministic DB state diff grader operational with SQL `NULL` safety.
+- [x] Trajectory policy grader catches unauthorized mutations and out-of-order attempts.
+- [x] `audit_log` invariant auditor operational.
+- [x] Report outputs granular per-grader breakdowns and success by category.
 
 ### Milestone M3: Deterministic Hallucination Detection
-- [ ] Fabricated action detector operational.
-- [ ] Fabricated entity detector operational with arithmetic and formatting tolerance.
-- [ ] Scoped LLM judge operational for refusal clarity without overriding deterministic graders.
-- [ ] Statistical engine outputs $\text{pass}^4$, $\text{pass}@4$, and 95% bootstrap CIs.
+- [x] Fabricated action detector operational.
+- [x] Fabricated entity detector operational with arithmetic and formatting tolerance.
+- [x] Scoped LLM judge operational for refusal clarity without overriding deterministic graders.
+- [x] Statistical engine outputs $\text{pass}^4$, $\text{pass}@4$, and 95% bootstrap CIs.
 
 ---
 
