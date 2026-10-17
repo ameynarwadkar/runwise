@@ -12,7 +12,7 @@ scrape_configs:
     scrape_interval: 5s
     scrape_timeout: 3s
     static_configs:
-      - targets: ["host.docker.internal:8000"]
+      - targets: ["app:8000"]
         labels:
           service: "runwise-agent"
           env: "production"

@@ -91,5 +91,30 @@ As of `2026-10-17`, the full test suite runs with `uv run pytest tests/ -v` with
 1. **Operational On-Call Runbook (`RUNBOOK.md`)**: Complete triage guide for all Prometheus alerts (`HighHTTPErrorRate`, `HighP95AgentLatency`, `GatewayFailoverActive`), triage queries, mitigation workflows, and escalation matrix.
 2. **Blameless Incident Postmortem (`postmortems/001-canary-latency-slo-breach.md`)**: Production postmortem of the Canary p95 Latency breach incident and instant zero-rebuild rollback drill.
 3. **Comprehensive Production README (`README.md`)**: Published complete enterprise documentation with baseline vs production headline numbers, Mermaid architecture diagrams, quickstart instructions, and verification commands.
-4. **Full Test Suite Status**: **138 / 138 tests passing (100%)** across 25 modules in 12.18s.
+4. **Full Test Suite Status**: **146 / 146 tests passing (100%)** across 27 modules.
+
+---
+
+## 9. Subproject 3: Cost-Aware Auto-Routing & Multi-Model Tiering (COMPLETED)
+1. **Model Pair & Baseline Benchmarking**:
+   - Evaluated `vertex_ai/gemini-2.5-flash` ($0.075 / 1M input) vs. `vertex_ai/gemini-2.5-pro` ($1.250 / 1M input — **16.6x price spread**) on Google Cloud Vertex AI across all 35 `dev` tasks (`results/routing/baseline_cheap/` and `baseline_strong/`). Both achieved 100.0% accuracy.
+2. **Baseline Comparator & 4-Way Evaluation (`ops/scripts/benchmark_routing_baselines.py`)**:
+   - **Baseline 1 (Always Cheap - Flash)**: $0.34 / 1k | 2.85s p50 | 100.0% pass rate (live inference).
+   - **Baseline 2 (Always Strong - Pro)**: $8.33 / 1k | 10.33s p50 | 100.0% pass rate (live inference).
+   - **Baseline 3 (Rule-Based Router)**: $7.52 / 1k (-9.7% cost) | 10.33s p50 | 100.0% pass rate (trace replay).
+   - **Strategy 4 (Adaptive Semantic Router)**: **$3.54 / 1k (-57.5% cost vs Pro, -52.9% vs Rule)** | **3.82s p50 (-63.0% latency)** | **100.0% pass rate** (empirical trace replay over live trajectories). Offloaded 65.7% (23/35) to Flash, reserving Pro for 12/35 adversarial/dispute cases.
+3. **Sub-0.1ms Zero-LLM-Overhead Router (`src/runwise/service/auto_router.py`)**:
+   - Regex and keyword risk scoring covering adversarial prompt injection, financial liability/chargebacks, and multi-order complexity (5/5 unit tests passing in `tests/unit/test_auto_router.py`).
+4. **Service Integration & Observability (`src/runwise/service/app.py`, `metrics.py`)**:
+   - Proper model resolution priority: `AutoRouter` $\to$ `Canary Rollout` $\to$ `Default/Gateway Loop`.
+   - Prometheus counter `runwise_router_decisions_total{selected_model, risk_tier}` and transparent headers (`X-Runwise-Routed-Model`, `X-Runwise-Complexity-Score`).
+   - 3/3 integration tests passing in `tests/integration/test_auto_routing_service.py`.
+5. **Docker Compose & Live Verification Drill**:
+   - Successfully verified end-to-end multi-container stack (`runwise-agent`, `prometheus`, `grafana`).
+   - Live Flash query (`ORD-101`) retrieved verified shipping address from isolated SQLite sandbox.
+   - Live Pro query (unauthorized charge dispute) enforced support policy without hallucinating actions.
+   - Grafana dashboard provisioned with Donut Chart and Risk Tier Bar Gauge panels.
+6. **Formal Benchmark Documentation (`docs/ROUTING_REPORT.md`)**:
+   - Comprehensive report with transparent empirical trace-replay methodology labeling and exact reproduction commands.
+
 

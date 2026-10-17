@@ -25,7 +25,7 @@ Every production performance metric measured against an established baseline:
 | **Automated Test Suite** | 0 tests | **146 / 146 passed** | **100% test coverage** across 27 modules |
 | **Availability (SLO)** | $\ge 99.0\%$ | **100.0%** | Zero 5xx errors under concurrent load |
 | **Canary Rollback Speed**| 5–10 min (container rebuild) | **< 200 ms** (dynamic hot-reload) | **Instant zero-rebuild rollback** |
-| **Cost-Aware Auto-Routing** | $8.33 / 1k (Always Pro) | **$3.54 / 1k** (Adaptive Router) | **-57.5% cost**, **-63.0% p50 latency** (3.82s vs 10.33s) at 100% accuracy |
+| **Cost-Aware Auto-Routing** | $8.33 / 1k (Always Pro) | **$3.54 / 1k** (Adaptive Router)* | **-57.5% cost**, **-63.0% p50 latency** (3.82s vs 10.33s) at 100% accuracy (*trace replay) |
 | **CI Regression Gate** | Unchecked deployment risk | **PR Blocked (exit code 1)** | Verified against 5% pass drop & 34% latency spike |
 | **Local Sandbox Setup** | Shared state / race conditions | **< 2 ms** (in-memory SQLite) | Total tenant isolation per session |
 ### Live Operational Telemetry (Grafana Dashboard)
@@ -38,8 +38,9 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 ### A. Empirically Measured (Live API & Infrastructure)
 - **100.0% Evaluation Accuracy**: Measured against Google Cloud Vertex AI (`gemini-2.5-flash`) across 50 tasks (35 Dev, 15 Frozen Holdout), 3 trials per task (150 total trials), graded by SQL state checks, trajectory policy rules, regex hallucination detection, and an LLM judge.
 - **-33.2% Prompt Cost Reduction**: Empirically measured via `ops/scripts/compare_prompts.py`. The compressed prompt (`v1.1_trimmed.yaml`) reduced characters from 2,502 to 1,177 (-53.0%) and prompt tokens from 808 to 460 (-43.1%), verified to preserve 100% of policy and safety invariants.
+- **-57.5% Auto-Routing Cost Reduction**: Evaluated across 35 dev tasks in [ROUTING_REPORT.md](docs/ROUTING_REPORT.md). Baselines 1 & 2 measured via live Google Cloud Vertex AI inference; Strategy 4 verified via empirical trace replay over live baseline trajectories, reducing cost from $8.33 to $3.54 / 1k requests and p50 latency from 10.33s to 3.82s (-63.0%) with 100% task accuracy.
 - **Concurrency Performance**: Measured using headless Locust load tests simulating multi-user customer support traffic against the running service, logging **0 errors (100% availability)** across 20 concurrent sessions with **4.04s p95 reasoning latency** and **28,052 tokens processed**.
-- **138 Passing Unit/Integration Tests**: Executed in 12.18s across 25 modules validating schemas, session contexts, gateway failovers, and metrics.
+- **146 Passing Unit/Integration Tests**: Executed across 27 modules validating schemas, session contexts, gateway failovers, auto-routing classification, and Prometheus metrics.
 ### B. Controlled Fault-Injection Drills (Operational Demonstrations)
 - **CI/CD Evaluation Gate Rejection Drill**: To prove the CI pipeline stops bad deploys, a synthetic regression candidate with a 5.0% accuracy drop and +34.5% latency spike was fed to `runwise.evals.gate`. The gate successfully failed with exit code 1 and generated a blocking GitHub Step Summary table.
 - **Canary Latency SLO Breach & Instant Rollback Drill**: To demonstrate sub-200ms disaster recovery, `ops/scripts/canary_drill.py` deployed canary `v2.0` at 50% traffic weight, simulated a 3,420ms latency breach (> 3,000ms SLO), triggered `ops/scripts/rollback.py`, and verified 10/10 subsequent customer sessions instantly recovered to stable with zero container restarts.
@@ -74,12 +75,13 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 ### Subproject 3: Cost-Aware Auto-Routing (`src/runwise/service/auto_router.py`)
 - **Multi-Model Tiering**: Dynamically selects between cost-effective `gemini-2.5-flash` ($0.075 / 1M tokens) and frontier `gemini-2.5-pro` ($1.250 / 1M tokens, 16.6x price spread) in $< 0.1\text{ ms}$ without auxiliary LLM overhead.
 - **Lexical & Semantic Risk Classification**: Evaluates adversarial injection patterns, high-liability financial disputes/chargebacks, and multi-entity conditional complexity.
-- **4-Way Benchmark Validation (35 Dev Tasks)**:
-  - *Always Cheap (Flash)*: $0.34 / 1k | 2.85s p50 | 100.0% pass rate
-  - *Always Strong (Pro)*: $8.33 / 1k | 10.33s p50 | 100.0% pass rate
-  - *Rule-Based Router*: $7.52 / 1k (-9.7% cost) | 10.33s p50 | 100.0% pass rate
-  - *Adaptive Semantic Router*: **$3.54 / 1k (-57.5% cost)** | **3.82s p50 (-63.0% latency)** | **100.0% pass rate**
+- **4-Way Benchmark Validation (35 Dev Tasks - [ROUTING_REPORT.md](docs/ROUTING_REPORT.md))**:
+  - *Always Cheap (Flash)*: $0.34 / 1k | 2.85s p50 | 100.0% pass rate (100% live inference)
+  - *Always Strong (Pro)*: $8.33 / 1k | 10.33s p50 | 100.0% pass rate (100% live inference)
+  - *Rule-Based Router*: $7.52 / 1k (-9.7% cost) | 10.33s p50 | 100.0% pass rate (trace replay)
+  - *Adaptive Semantic Router*: **$3.54 / 1k (-57.5% cost)** | **3.82s p50 (-63.0% latency)** | **100.0% pass rate** (empirical trace replay)
   - Safely offloads **65.7% of queries to Flash** while reserving Pro for adversarial and complex edge cases.
+- **Prometheus Telemetry & Grafana Visualizations**: Tracks `runwise_router_decisions_total{selected_model, risk_tier}` on donut and bar-gauge panels.
 
 ---
 
