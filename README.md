@@ -34,31 +34,31 @@ Every production performance metric measured against an established baseline:
 
 ```mermaid
 flowchart TD
-    Client["Client / User Traffic"] -->|HTTP / JSON| Middleware["ObservabilityMiddleware<br>(Trace Context, Latency, X-Request-ID)"]
+    Client["Client / User Traffic"] -->|"HTTP / JSON"| Middleware["ObservabilityMiddleware<br/>Trace Context, Latency, X-Request-ID"]
     
     subgraph Service["Runwise FastAPI Service (:8000)"]
-        Middleware --> Router["CanaryRouter<br>(Session Hashing & Variant Pinning)"]
-        Router -->|Stable 90% (v1.0)| LoopStable["AgentLoop<br>(v1.0 Prompt)"]
-        Router -->|Canary 10% (v2.0)| LoopCanary["AgentLoop<br>(v2.0 / v1.1 Prompt)"]
+        Middleware --> Router["CanaryRouter<br/>Session Hashing & Variant Pinning"]
+        Router -->|"Stable 90% (v1.0)"| LoopStable["AgentLoop (v1.0 Prompt)"]
+        Router -->|"Canary 10% (v2.0)"| LoopCanary["AgentLoop (v2.0 / v1.1 Prompt)"]
         
-        LoopStable --> SessionMgr["SessionManager<br>(Ephemeral SQLite Sandboxes)"]
+        LoopStable --> SessionMgr["SessionManager<br/>Ephemeral SQLite Sandboxes"]
         LoopCanary --> SessionMgr
         
-        SessionMgr --> Tools["Dispatcher & Tools<br>(verify_customer, cancel_order, lookup_order)"]
-        LoopStable --> Gateway["ModelGateway<br>(Retries, Fallback, Circuit Breaker)"]
+        SessionMgr --> Tools["Dispatcher & Tools<br/>verify_customer, cancel_order, lookup_order"]
+        LoopStable --> Gateway["ModelGateway<br/>Retries, Fallback, Circuit Breaker"]
         LoopCanary --> Gateway
     end
 
     subgraph LLM["Upstream Foundation Models"]
-        Gateway -->|Primary| Vertex["Google Vertex AI<br>(gemini-2.5-flash)"]
-        Gateway -.->|Fallback Failover| Secondary["Secondary LLM Route<br>(gemini-2.5-pro)"]
+        Gateway -->|"Primary"| Vertex["Google Vertex AI<br/>gemini-2.5-flash"]
+        Gateway -.->|"Fallback Failover"| Secondary["Secondary LLM Route<br/>gemini-2.5-pro"]
     end
 
     subgraph Ops["Observability & Infrastructure Stack"]
-        Service -->|Scrape /metrics| Prom["Prometheus (:9090)<br>(SLO Alert Rules)"]
-        Prom --> Grafana["Grafana (:3000)<br>(Dashboard Provisioning)"]
-        Service -->|OTel Spans| Phoenix["Arize Phoenix (:6006)<br>(Distributed Tracing)"]
-        Rollback["ops/scripts/rollback.py"] -->|POST /v1/admin/canary/rollback| Router
+        Service -->|"Scrape /metrics"| Prom["Prometheus (:9090)<br/>SLO Alert Rules"]
+        Prom --> Grafana["Grafana (:3000)<br/>Dashboard Provisioning"]
+        Service -->|"OTel Spans"| Phoenix["Arize Phoenix (:6006)<br/>Distributed Tracing"]
+        Rollback["ops/scripts/rollback.py"] -->|"POST /v1/admin/canary/rollback"| Router
     end
 ```
 
