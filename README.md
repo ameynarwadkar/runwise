@@ -27,40 +27,22 @@ Every production performance metric measured against an established baseline:
 | **Canary Rollback Speed**| 5–10 min (container rebuild) | **< 200 ms** (dynamic hot-reload) | **Instant zero-rebuild rollback** |
 | **CI Regression Gate** | Unchecked deployment risk | **PR Blocked (exit code 1)** | Verified against 5% pass drop & 34% latency spike |
 | **Local Sandbox Setup** | Shared state / race conditions | **< 2 ms** (in-memory SQLite) | Total tenant isolation per session |
+### Live Operational Telemetry (Grafana Dashboard)
+![Runwise Live Grafana Operations Dashboard](docs/images/grafana_dashboard.png)
 
 ---
 
-## 2. End-to-End System Architecture
+## 2. Evidence Taxonomy & Defensibility Matrix
+To ensure absolute technical credibility, all numbers in this repository are categorized into empirical measurements vs. controlled demonstrations:
+### A. Empirically Measured (Live API & Infrastructure)
+- **100.0% Evaluation Accuracy**: Measured against Google Cloud Vertex AI (`gemini-2.5-flash`) across 50 tasks (35 Dev, 15 Frozen Holdout), 3 trials per task (150 total trials), graded by SQL state checks, trajectory policy rules, regex hallucination detection, and an LLM judge.
+- **-33.2% Prompt Cost Reduction**: Empirically measured via `ops/scripts/compare_prompts.py`. The compressed prompt (`v1.1_trimmed.yaml`) reduced characters from 2,502 to 1,177 (-53.0%) and prompt tokens from 808 to 460 (-43.1%), verified to preserve 100% of policy and safety invariants.
+- **Concurrency Performance**: Measured using headless Locust load tests simulating multi-user customer support traffic against the running service, logging 0 errors and sub-10ms non-LLM overhead.
+- **138 Passing Unit/Integration Tests**: Executed in 12.18s across 25 modules validating schemas, session contexts, gateway failovers, and metrics.
+### B. Controlled Fault-Injection Drills (Operational Demonstrations)
+- **CI/CD Evaluation Gate Rejection Drill**: To prove the CI pipeline stops bad deploys, a synthetic regression candidate with a 5.0% accuracy drop and +34.5% latency spike was fed to `runwise.evals.gate`. The gate successfully failed with exit code 1 and generated a blocking GitHub Step Summary table.
+- **Canary Latency SLO Breach & Instant Rollback Drill**: To demonstrate sub-200ms disaster recovery, `ops/scripts/canary_drill.py` deployed canary `v2.0` at 50% traffic weight, simulated a 3,420ms latency breach (> 3,000ms SLO), triggered `ops/scripts/rollback.py`, and verified 10/10 subsequent customer sessions instantly recovered to stable with zero container restarts.
 
-```mermaid
-flowchart TD
-    Client["Client / User Traffic"] -->|"HTTP / JSON"| Middleware["ObservabilityMiddleware<br/>Trace Context, Latency, X-Request-ID"]
-    
-    subgraph Service["Runwise FastAPI Service (:8000)"]
-        Middleware --> Router["CanaryRouter<br/>Session Hashing & Variant Pinning"]
-        Router -->|"Stable 90% (v1.0)"| LoopStable["AgentLoop (v1.0 Prompt)"]
-        Router -->|"Canary 10% (v2.0)"| LoopCanary["AgentLoop (v2.0 / v1.1 Prompt)"]
-        
-        LoopStable --> SessionMgr["SessionManager<br/>Ephemeral SQLite Sandboxes"]
-        LoopCanary --> SessionMgr
-        
-        SessionMgr --> Tools["Dispatcher & Tools<br/>verify_customer, cancel_order, lookup_order"]
-        LoopStable --> Gateway["ModelGateway<br/>Retries, Fallback, Circuit Breaker"]
-        LoopCanary --> Gateway
-    end
-
-    subgraph LLM["Upstream Foundation Models"]
-        Gateway -->|"Primary"| Vertex["Google Vertex AI<br/>gemini-2.5-flash"]
-        Gateway -.->|"Fallback Failover"| Secondary["Secondary LLM Route<br/>gemini-2.5-pro"]
-    end
-
-    subgraph Ops["Observability & Infrastructure Stack"]
-        Service -->|"Scrape /metrics"| Prom["Prometheus (:9090)<br/>SLO Alert Rules"]
-        Prom --> Grafana["Grafana (:3000)<br/>Dashboard Provisioning"]
-        Service -->|"OTel Spans"| Phoenix["Arize Phoenix (:6006)<br/>Distributed Tracing"]
-        Rollback["ops/scripts/rollback.py"] -->|"POST /v1/admin/canary/rollback"| Router
-    end
-```
 
 ---
 
