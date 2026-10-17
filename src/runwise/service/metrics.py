@@ -113,6 +113,14 @@ CANARY_LATENCY_SECONDS: Histogram = Histogram(
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0),
 )
 
+# ============================================================================
+# AUTO-ROUTING TELEMETRY
+# ============================================================================
+ROUTER_DECISIONS_TOTAL: Counter = Counter(
+    "runwise_router_decisions_total",
+    "Total requests classified and routed by the cost-aware AutoRouter.",
+    ["selected_model", "risk_tier"],
+)
 
 
 def get_metrics_payload(registry: CollectorRegistry = REGISTRY) -> tuple[bytes, str]:

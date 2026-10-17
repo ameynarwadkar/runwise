@@ -40,9 +40,18 @@ from runwise.service.schemas import (
     TokenUsageSchema,
 )
 from runwise.service.session import SessionManager
+from runwise.service.auto_router import AutoRouter, AutoRouterConfig
+from runwise.service.metrics import ROUTER_DECISIONS_TOTAL
 
 logger = logging.getLogger(__name__)
 
+_auto_router_instance: AutoRouter | None = None
+
+def get_auto_router() -> AutoRouter:
+    global _auto_router_instance
+    if _auto_router_instance is None:
+        _auto_router_instance = AutoRouter(AutoRouterConfig())
+    return _auto_router_instance
 
 def get_session_manager(request: Request) -> SessionManager:
     """FastAPI dependency resolving the active SessionManager instance."""
@@ -182,6 +191,7 @@ def create_app(
         manager: SessionManager = Depends(get_session_manager),
         loop: AgentLoop = Depends(get_agent_loop),
         router: CanaryRouter = Depends(get_canary_router_dep),
+        auto_router: AutoRouter = Depends(get_auto_router),
     ) -> AgentRunResponse:
         """
         Executes a multi-turn agent interaction.
@@ -191,27 +201,51 @@ def create_app(
         4. Returns the agent's textual response and operational trajectory telemetry.
         """
         try:
-            # 1. Resolve routing decision via session-consistent hashing
+            # 1. Resolve canary/variant routing decision via session-consistent hashing
             req_id = getattr(request.state, "request_id", None)
             decision = router.route(session_id=payload.session_id, request_id=req_id)
+
+            # 2. Resolve target model: AutoRouter -> Canary Rollout -> Default Loop/Gateway Model
+            complexity_score = None
+            routing_reason = None
+
+            if payload.auto_route:
+                route_dec = auto_router.route(payload.prompt)
+                target_model = route_dec.selected_model
+                complexity_score = route_dec.complexity_score
+                routing_reason = route_dec.decision_reason
+
+                risk_tier = "high" if route_dec.complexity_score >= auto_router.config.complexity_threshold else "low"
+                ROUTER_DECISIONS_TOTAL.labels(selected_model=target_model, risk_tier=risk_tier).inc()
+
+                response.headers["X-Runwise-Complexity-Score"] = str(complexity_score)
+                response.headers["X-Runwise-Routed-Model"] = target_model
+            elif decision.is_canary:
+                target_model = decision.model
+            else:
+                target_model = loop.model
+
             # Propagate transparent observability headers
             response.headers["X-Runwise-Variant"] = decision.variant
             response.headers["X-Runwise-Prompt-Version"] = decision.prompt_version
-            response.headers["X-Runwise-Model"] = decision.model
-            # 2. Resolve or initialize sandbox context for session
+            response.headers["X-Runwise-Model"] = target_model
+
+            # 3. Resolve or initialize sandbox context for session
             session = manager.get_or_create(
                 session_id=payload.session_id,
                 customer_id=payload.customer_id,
             )
-            # 3. Execute agent loop with correlation request ID
+
+            # 4. Instantiate loop if target model or prompt version differs from default loop
             active_loop = loop
-            # If canary routing selected a different model or prompt version and default loop was used
-            if decision.is_canary and (loop.model != decision.model or loop.prompt_version != decision.prompt_version):
+            target_prompt_version = decision.prompt_version
+            if loop.model != target_model or loop.prompt_version != target_prompt_version:
                 active_loop = AgentLoop(
-                    model=decision.model,
-                    prompt_version=decision.prompt_version,
+                    model=target_model,
+                    prompt_version=target_prompt_version,
                     gateway=loop.gateway,
                 )
+
             trajectory = active_loop.run(
                 user_prompt=payload.prompt,
                 session=session,
@@ -265,6 +299,8 @@ def create_app(
                 model=model_name,
                 prompt_version=decision.prompt_version,
                 variant=decision.variant,
+                complexity_score=complexity_score,
+                routing_reason=routing_reason,
             )
         except Exception as exc:
             logger.exception("Error executing agent run for session %s: %s", payload.session_id, exc)

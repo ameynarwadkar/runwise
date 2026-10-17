@@ -1,7 +1,7 @@
 # Runwise: Production-Grade Customer Support Agent & LLMOps Service
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![Test Suite](https://img.shields.io/badge/tests-138%2F138%20passing-brightgreen.svg)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-146%2F146%20passing-brightgreen.svg)](tests/)
 [![Benchmark Reliability](https://img.shields.io/badge/eval%20pass%20rate-100.0%25-success.svg)](docs/BENCHMARK_REPORT.md)
 [![Cost Optimization](https://img.shields.io/badge/prompt%20cost%20drop--33.2%25-blueviolet.svg)](docs/CAPACITY_AND_COST.md)
 [![Observability](https://img.shields.io/badge/OTel%20%7C%20Prometheus-instrumented-orange.svg)](ops/)
@@ -22,9 +22,10 @@ Every production performance metric measured against an established baseline:
 | **Benchmark Accuracy** | 94.3% (Initial Dev Run) | **100.0%** (50 tasks / 150 trials) | **+5.7%** (0.0% holdout generalization gap) |
 | **Cost per 1k Successes** | $0.0786 (`v1.0` Prompt) | **$0.0525** (`v1.1_trimmed`) | **-33.2%** direct LLM cost reduction |
 | **System Prompt Tokens** | 808 tokens (~2,502 chars) | **460 tokens** (~1,177 chars) | **-43.1%** input token compression |
-| **Automated Test Suite** | 0 tests | **138 / 138 passed** | **100% test coverage** across 25 modules |
+| **Automated Test Suite** | 0 tests | **146 / 146 passed** | **100% test coverage** across 27 modules |
 | **Availability (SLO)** | $\ge 99.0\%$ | **100.0%** | Zero 5xx errors under concurrent load |
 | **Canary Rollback Speed**| 5–10 min (container rebuild) | **< 200 ms** (dynamic hot-reload) | **Instant zero-rebuild rollback** |
+| **Cost-Aware Auto-Routing** | $8.33 / 1k (Always Pro) | **$3.54 / 1k** (Adaptive Router) | **-57.5% cost**, **-63.0% p50 latency** (3.82s vs 10.33s) at 100% accuracy |
 | **CI Regression Gate** | Unchecked deployment risk | **PR Blocked (exit code 1)** | Verified against 5% pass drop & 34% latency spike |
 | **Local Sandbox Setup** | Shared state / race conditions | **< 2 ms** (in-memory SQLite) | Total tenant isolation per session |
 ### Live Operational Telemetry (Grafana Dashboard)
@@ -70,6 +71,16 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 - **Locust Load Suite (`ops/load/`)**: Automated headless concurrency benchmark with custom simulated user journeys.
 - **Operational Runbook & Postmortem**: Production on-call triage runbook ([RUNBOOK.md](RUNBOOK.md)) and blameless incident postmortem ([postmortems/001-canary-latency-slo-breach.md](postmortems/001-canary-latency-slo-breach.md)).
 
+### Subproject 3: Cost-Aware Auto-Routing (`src/runwise/service/auto_router.py`)
+- **Multi-Model Tiering**: Dynamically selects between cost-effective `gemini-2.5-flash` ($0.075 / 1M tokens) and frontier `gemini-2.5-pro` ($1.250 / 1M tokens, 16.6x price spread) in $< 0.1\text{ ms}$ without auxiliary LLM overhead.
+- **Lexical & Semantic Risk Classification**: Evaluates adversarial injection patterns, high-liability financial disputes/chargebacks, and multi-entity conditional complexity.
+- **4-Way Benchmark Validation (35 Dev Tasks)**:
+  - *Always Cheap (Flash)*: $0.34 / 1k | 2.85s p50 | 100.0% pass rate
+  - *Always Strong (Pro)*: $8.33 / 1k | 10.33s p50 | 100.0% pass rate
+  - *Rule-Based Router*: $7.52 / 1k (-9.7% cost) | 10.33s p50 | 100.0% pass rate
+  - *Adaptive Semantic Router*: **$3.54 / 1k (-57.5% cost)** | **3.82s p50 (-63.0% latency)** | **100.0% pass rate**
+  - Safely offloads **65.7% of queries to Flash** while reserving Pro for adversarial and complex edge cases.
+
 ---
 
 ## 4. Quickstart & Verification Guide
@@ -84,7 +95,7 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 ```powershell
 # Clone repository
 git clone https://github.com/ameynarwadkar/runwise.git
-cd production-level-agent
+cd runwise
 
 # Install dependencies using uv
 uv sync
