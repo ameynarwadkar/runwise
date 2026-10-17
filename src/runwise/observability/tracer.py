@@ -2,9 +2,10 @@
 OpenTelemetry Tracing and Arize Phoenix Observability Integration.
 
 Provides non-invasive trace instrumentation:
-- Zero overhead if PHOENIX_ENABLED is false.
+- Zero overhead if tracing is disabled.
 - Launches local Phoenix UI server (http://localhost:6006) when active.
 - Records parent agent trial spans and nested tool-dispatch child spans.
+- Participates in W3C distributed trace propagation with registered TracerProviders.
 """
 
 from __future__ import annotations
@@ -16,6 +17,31 @@ from contextlib import contextmanager
 from typing import Any, Generator
 
 _PHOENIX_SESSION = None
+
+
+def is_tracing_enabled() -> bool:
+    """
+    Returns True if Phoenix or OpenTelemetry tracing is active.
+
+    Evaluates:
+    1. PHOENIX_ENABLED environment variable.
+    2. OTEL_ENABLED environment variable.
+    3. Active non-proxy/non-noop OpenTelemetry TracerProvider.
+    """
+    if os.getenv("PHOENIX_ENABLED", "false").lower() in ("true", "1", "yes"):
+        return True
+    if os.getenv("OTEL_ENABLED", "false").lower() in ("true", "1", "yes"):
+        return True
+    try:
+        from opentelemetry import trace
+        from opentelemetry.trace import NoOpTracerProvider, ProxyTracerProvider
+
+        provider = trace.get_tracer_provider()
+        if provider is not None and not isinstance(provider, (ProxyTracerProvider, NoOpTracerProvider)):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 class _FilterInternalSpansProcessor:
@@ -206,44 +232,46 @@ def trace_span(
     Falls back gracefully to a no-op generator if OpenTelemetry/Phoenix is disabled.
     Enriches spans with OpenInference conventions for Phoenix UI visualization.
     """
-    enabled = os.getenv("PHOENIX_ENABLED", "false").lower() in ("true", "1", "yes")
-    if not enabled:
+    if not is_tracing_enabled():
         yield SpanHandle(None)
         return
 
     try:
         from opentelemetry import trace
-        from opentelemetry.trace import Status, StatusCode
 
         tracer = trace.get_tracer("runwise.agent")
-        with tracer.start_as_current_span(name) as span:
-            # Auto-infer OpenInference span kind if not provided
-            kind = span_kind
-            if not kind:
-                if name.startswith("agent_run"):
-                    kind = "AGENT"
-                elif name.startswith("tool_dispatch") or name.startswith("tool_"):
-                    kind = "TOOL"
-                elif name.startswith("llm_completion") or name.startswith("llm_"):
-                    kind = "LLM"
-            if kind:
-                span.set_attribute("openinference.span.kind", kind.upper())
-
-            handle = SpanHandle(span)
-            if input_value is not None:
-                handle.set_input(input_value)
-            if output_value is not None:
-                handle.set_output(output_value)
-
-            if attributes:
-                for k, v in attributes.items():
-                    span.set_attribute(k, str(v))
-
-            try:
-                yield handle
-                handle.set_status_ok()
-            except Exception as exc:
-                handle.set_status_error(str(exc))
-                raise
+        span_cm = tracer.start_as_current_span(name)
     except Exception:
         yield SpanHandle(None)
+        return
+
+    # Auto-infer OpenInference span kind if not provided
+    kind = span_kind
+    if not kind:
+        if name.startswith("agent_run"):
+            kind = "AGENT"
+        elif name.startswith("tool_dispatch") or name.startswith("tool_"):
+            kind = "TOOL"
+        elif name.startswith("llm_completion") or name.startswith("llm_"):
+            kind = "LLM"
+
+    with span_cm as span:
+        if kind:
+            span.set_attribute("openinference.span.kind", kind.upper())
+
+        handle = SpanHandle(span)
+        if input_value is not None:
+            handle.set_input(input_value)
+        if output_value is not None:
+            handle.set_output(output_value)
+
+        if attributes:
+            for k, v in attributes.items():
+                span.set_attribute(k, str(v))
+
+        try:
+            yield handle
+            handle.set_status_ok()
+        except Exception as exc:
+            handle.set_status_error(str(exc))
+            raise

@@ -143,21 +143,28 @@ _DISPATCH_TABLE = {
 
 def dispatch_tool_call(
     session: SessionContext,
-    tool_name: str,
-    arguments: dict[str, Any] | str,
+    tool_name: str | None = None,
+    arguments: dict[str, Any] | str | None = None,
+    *,
+    fn_name: str | None = None,
+    fn_args: dict[str, Any] | str | None = None,
 ) -> ToolResult:
     """
     Safely executes a model tool call against the active session.
     
-    1. Deserializes arguments if provided as a raw JSON string.
-    2. Verifies the tool name exists in the dispatch table.
-    3. Passes `session` and parsed kwargs to the corresponding domain function.
-    4. Catches argument mismatches and unexpected errors without crashing.
+    1. Resolves tool name and arguments (supporting both tool_name/arguments and fn_name/fn_args).
+    2. Deserializes arguments if provided as a raw JSON string.
+    3. Verifies the tool name exists in the dispatch table.
+    4. Passes `session` and parsed kwargs to the corresponding domain function.
+    5. Catches argument mismatches and unexpected errors without crashing.
     """
+    target_tool_name = tool_name or fn_name or ""
+    raw_arguments = arguments if arguments is not None else (fn_args if fn_args is not None else {})
+
     # 1. Parse JSON string arguments from model if necessary
-    if isinstance(arguments, str):
+    if isinstance(raw_arguments, str):
         try:
-            parsed_args = json.loads(arguments) if arguments.strip() else {}
+            parsed_args = json.loads(raw_arguments) if raw_arguments.strip() else {}
         except Exception as e:
             return ToolResult(
                 success=False,
@@ -165,15 +172,15 @@ def dispatch_tool_call(
                 error_message=f"Failed to parse tool arguments: {e}",
             )
     else:
-        parsed_args = arguments or {}
+        parsed_args = raw_arguments or {}
 
     # 2. Verify tool exists
-    func = _DISPATCH_TABLE.get(tool_name)
+    func = _DISPATCH_TABLE.get(target_tool_name)
     if not func:
         return ToolResult(
             success=False,
             error_code="UNKNOWN_TOOL",
-            error_message=f"Tool '{tool_name}' is not recognized by the system.",
+            error_message=f"Tool '{target_tool_name}' is not recognized by the system.",
         )
 
     # 3. Execute domain tool with session context

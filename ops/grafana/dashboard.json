@@ -1,0 +1,598 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": null,
+    "links": [],
+    "liveNow": true,
+    "panels": [
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 100,
+            "title": "Service Health & SLO Indicators",
+            "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "reqps"
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 0,
+                "y": 1
+            },
+            "id": 1,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "10.0.0",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_http_requests_total[1m])) or vector(0)",
+                    "legendFormat": "RPS",
+                    "refId": "A"
+                }
+            ],
+            "title": "Total Request Rate",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 1.0
+                            },
+                            {
+                                "color": "red",
+                                "value": 5.0
+                            }
+                        ]
+                    },
+                    "unit": "percent"
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 6,
+                "y": 1
+            },
+            "id": 2,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "10.0.0",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "((sum(rate(runwise_http_requests_total{status_code=~\"5..\"}[1m])) or vector(0)) / (sum(rate(runwise_http_requests_total[1m])) > 0) * 100) or vector(0)",
+                    "legendFormat": "Error Rate",
+                    "refId": "A"
+                }
+            ],
+            "title": "HTTP 5xx Error Rate",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 2.5
+                            },
+                            {
+                                "color": "red",
+                                "value": 4.0
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 12,
+                "y": 1
+            },
+            "id": 3,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "10.0.0",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "histogram_quantile(0.95, sum(rate(runwise_agent_run_duration_seconds_bucket[5m])) by (le)) or vector(0)",
+                    "legendFormat": "p95 Latency",
+                    "refId": "A"
+                }
+            ],
+            "title": "p95 Agent Latency (SLO: <4s)",
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "blue",
+                                "value": null
+                            },
+                            {
+                                "color": "orange",
+                                "value": 50
+                            }
+                        ]
+                    },
+                    "unit": "none"
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 18,
+                "y": 1
+            },
+            "id": 4,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "10.0.0",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "runwise_active_sessions",
+                    "legendFormat": "Active Sandboxes",
+                    "refId": "A"
+                }
+            ],
+            "title": "Active Customer Sandboxes",
+            "type": "stat"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 5
+            },
+            "id": 101,
+            "title": "HTTP Traffic & Latency Breakdown",
+            "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineInterpolation": "smooth"
+                    },
+                    "unit": "reqps"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 6
+            },
+            "id": 5,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_http_requests_total[1m])) by (endpoint, method, status_code)",
+                    "legendFormat": "{{method}} {{endpoint}} [{{status_code}}]",
+                    "refId": "A"
+                }
+            ],
+            "title": "HTTP Request Throughput by Route",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineInterpolation": "smooth"
+                    },
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 6
+            },
+            "id": 6,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "histogram_quantile(0.50, sum(rate(runwise_http_request_duration_seconds_bucket[5m])) by (le))",
+                    "legendFormat": "p50 Latency",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "histogram_quantile(0.95, sum(rate(runwise_http_request_duration_seconds_bucket[5m])) by (le))",
+                    "legendFormat": "p95 Latency",
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "histogram_quantile(0.99, sum(rate(runwise_http_request_duration_seconds_bucket[5m])) by (le))",
+                    "legendFormat": "p99 Latency",
+                    "refId": "C"
+                }
+            ],
+            "title": "HTTP Latency Percentiles (p50, p95, p99)",
+            "type": "timeseries"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 13
+            },
+            "id": 102,
+            "title": "Agent Execution & LLM Operations",
+            "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "bars"
+                    },
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 8,
+                "x": 0,
+                "y": 14
+            },
+            "id": 7,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_agent_runs_total[5m])) by (model, exit_reason)",
+                    "legendFormat": "{{model}} - {{exit_reason}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Agent Runs by Model & Exit Reason",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "line",
+                        "lineInterpolation": "smooth"
+                    },
+                    "unit": "cps"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 8,
+                "x": 8,
+                "y": 14
+            },
+            "id": 8,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_agent_tokens_total[5m])) by (token_type)",
+                    "legendFormat": "{{token_type}} tokens/s",
+                    "refId": "A"
+                }
+            ],
+            "title": "Token Consumption Velocity",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "bars"
+                    },
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 8,
+                "x": 16,
+                "y": 14
+            },
+            "id": 9,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_agent_tool_calls_total[5m])) by (tool_name, status)",
+                    "legendFormat": "{{tool_name}} [{{status}}]",
+                    "refId": "A"
+                }
+            ],
+            "title": "Domain Tool Calling Rates",
+            "type": "timeseries"
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 21
+            },
+            "id": 103,
+            "title": "Model Gateway Reliability & Fallover",
+            "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "line",
+                        "fillOpacity": 15
+                    },
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 22
+            },
+            "id": 10,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_gateway_retries_total[5m])) by (model, reason)",
+                    "legendFormat": "Retry: {{model}} ({{reason}})",
+                    "refId": "A"
+                }
+            ],
+            "title": "Gateway Transient Retries (429 / 5xx / Timeout)",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "Prometheus"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "bars",
+                        "fillOpacity": 30
+                    },
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 22
+            },
+            "id": 11,
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "Prometheus"
+                    },
+                    "expr": "sum(rate(runwise_gateway_fallbacks_total[5m])) by (primary_model, fallback_model)",
+                    "legendFormat": "Fallback: {{primary_model}} -> {{fallback_model}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Gateway Secondary Fallback Events",
+            "type": "timeseries"
+        }
+    ],
+    "refresh": "5s",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "runwise",
+        "agent",
+        "llmops"
+    ],
+    "time": {
+        "from": "now-15m",
+        "to": "now"
+    },
+    "timepicker": {
+        "refresh_intervals": [
+            "5s",
+            "10s",
+            "30s",
+            "1m"
+        ]
+    },
+    "timezone": "browser",
+    "title": "Runwise Agent Operations Dashboard",
+    "uid": "runwise-agent-ops",
+    "version": 1
+}

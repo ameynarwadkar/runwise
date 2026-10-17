@@ -22,8 +22,8 @@
 
 ---
 
-## 3. Current Architecture & Verification Status (All 66 Tests Passing)
-As of `2026-10-17`, the full test suite runs with `uv run pytest tests/ -v` with **66 passed in ~12.9s**.
+## 3. Current Architecture & Verification Status (All 105 Tests Passing)
+As of `2026-10-17`, the full test suite runs with `uv run pytest tests/ -v` with **105 passed in ~6.5s**.
 
 ### Completed Phases & Milestones:
 1. **Phase 1: Environment & SQLite Schema (`src/runwise/domain/schema.sql`)**
@@ -33,31 +33,39 @@ As of `2026-10-17`, the full test suite runs with `uv run pytest tests/ -v` with
 3. **Phase 3: Policy, Domain Models & Tools (`src/runwise/domain/tools.py`)**
    - Support policy (`data/policies/v1.0.md`). 7 domain tools enforcing auth-before-action and audit logging.
 4. **Phase 4: Agent Loop & Tool Dispatcher (`src/runwise/agent/loop.py`, `dispatcher.py`)**
-   - Prompt `prompts/agent/v1.0.yaml`. LiteLLM completion loop with OpenTelemetry tracing and deterministic clock injection.
+   - LiteLLM completion loop with OpenTelemetry tracing and deterministic clock injection.
 5. **Phase 5: Evaluation Dataset & Layered Graders**
    - 50-Task Dataset (`evals/tasks.jsonl`): 35 dev / 15 frozen_holdout. Tiers 1–4 graders operational.
 6. **Phase 6: Statistical Reliability & Parallel Runner**
    - Parallel runner with ephemeral per-trial sandboxes, computing $\text{pass}^k$, $\text{pass}@k$, and flip rates.
-7. **Milestone M0: Live Baseline Evaluation**
-   - Evaluated 35 dev tasks across 105 trials: 94.3% baseline pass rate (`run_20261017_140437_142089`).
-8. **Milestone M1 & M2: Observability & Trace Sanitization**
-   - Integrated Arize Phoenix with OpenInference spans and custom span filtering to eliminate internal polluter spans.
-9. **Milestone M3 & M4: Failure Mode Analysis & Prompt Hardening**
-   - Eliminated cross-tenant IDOR, negative refunds, premature mutations, and date hallucinations.
-   - **Dev Split Pass Rate: 100.0%** (105/105 trials, $\text{pass}^2 = 100.0\%$, `run_20261017_145012_28fee3`).
-10. **Milestone M5: Generalization on Frozen Holdout**
-   - Evaluated unseen 15 tasks across 45 trials: **100.0% pass rate** (`run_20261017_145501_aab243`).
-   - Generalization gap: $\Delta = 0.0\%$. Full retrospective in `docs/BENCHMARK_REPORT.md`.
+7. **Milestone M0–M5: Benchmark & Generalization Verified**
+   - Dev Split: 100.0% pass rate (105/105 trials, $\text{pass}^2 = 100.0\%$).
+   - Frozen Holdout: 100.0% pass rate across 45 trials ($\Delta = 0.0\%$). Full report in `docs/BENCHMARK_REPORT.md`.
+8. **Subproject 2 Milestone 1: Production Agent Service & Gateway (COMPLETED)**
+   - **Service Schemas (`src/runwise/service/schemas.py`)**: Pydantic v2 contracts for requests, responses, health, and tokens.
+   - **Isolated Session Management (`src/runwise/service/session.py`)**: Thread-safe sandboxed `SessionContext` lifecycles with TTL expiration and resource cleanup.
+   - **Reliability Gateway (`src/runwise/service/gateway.py`)**: Timeouts, exponential retries with jitter on 429/5xx, fail-fast on 400, and automated fallback.
+   - **FastAPI Application (`src/runwise/service/app.py`)**: Application factory exposing `/healthz`, `/v1/agent/run`, and `/v1/agent/sessions/{session_id}`.
+   - **Live Smoke Test**: Successfully verified against Google Cloud Vertex AI (`vertex_ai/gemini-2.5-flash`), proving multi-turn tool calling, state mutation, and 0% cross-session leakage.
+9. **Subproject 2 Milestone 2: Observability, Middleware & Prometheus Metrics (COMPLETED)**
+   - **Prometheus Metrics Registry (`src/runwise/service/metrics.py`)**: HTTP RED metrics, agent execution count, latency histogram, prompt/completion tokens, domain tool call counters, gateway retries/fallbacks, and active sessions gauge (`tests/test_metrics.py`).
+   - **Observability Middleware (`src/runwise/service/middleware.py`)**: W3C `traceparent` extraction, correlation `X-Request-ID`, path normalization (e.g. `/v1/agent/sessions/{session_id}`), and response headers (`tests/test_middleware.py`).
+   - **Distributed Tracing & Context Propagation (`src/runwise/observability/tracer.py`, `src/runwise/agent/loop.py`)**: W3C context inheritance across child spans (`agent_run`, `llm_completion`, `tool_dispatch`) and `http.request_id` attribute linking.
+   - **Observability Endpoints (`src/runwise/service/app.py`)**: `GET /metrics` for Prometheus scraping and `GET /readyz` for database/provider readiness verification (`tests/test_service_api.py`).
+   - **End-to-End Observability Integration (`tests/test_observability.py`)**: 7 comprehensive tests covering trace propagation, metrics scraping, session lifecycle gauges, and gateway fallback counters.
+
+---
+## 4. Subproject 2 Milestone 3: Containerization & Local Infrastructure (COMPLETED)
+1. **Production Multi-stage Dockerfile (`Dockerfile`, `.dockerignore`)**: Minimal, secure multi-stage Debian build leveraging Astral `uv` layer caching, non-root user execution, and zero-dependency standard library health probes.
+2. **Prometheus Scrape Configuration (`ops/prometheus/prometheus.yml`, `alerts.yml`)**: Automated 5-second metrics scraping of `app:8000/metrics` with 3 production SLO alert rules (`HighHTTPErrorRate`, `HighP95AgentLatency`, `GatewayFailoverActive`).
+3. **Grafana Dashboard Provisioning (`ops/grafana/dashboard.json`, `ops/grafana/provisioning/`)**: Declarative datasource and dashboard provisioning exposing an 11-panel RED & Agent operations dashboard.
+4. **Local Docker Compose Stack (`docker-compose.yml`)**: Multi-container stack orchestrating FastAPI agent runtime, Prometheus, and Grafana on an isolated bridge network (`runwise-net`), verified healthy with live metrics scraping.
 
 ---
 
-## 4. Next Project Phase: Production Agent Service & LLM Ops (Sub-Project 2)
-1. **FastAPI Agent Service (`src/runwise/service/app.py`)**:
-   - Asynchronous endpoints (`/v1/chat/completions`, `/v1/agent/run`).
-   - Streaming SSE responses and session lifecycle management.
-2. **Production Middleware & Health Checks**:
-   - Prometheus metrics endpoint (`/metrics`) and health/readiness probes (`/healthz`).
-   - Distributed trace correlation (propagating trace IDs from HTTP headers into `agent_run` spans).
-3. **Model Auto-Routing & Cost Optimization (Sub-Project 3)**:
-   - Benchmark lower-tier models (Gemini Flash Lite, open-weights) to evaluate difficulty trade-offs.
-   - Implement query router to cut API spend by 60–80% without sacrificing 100% consensus reliability.
+## 5. Next Project Phase: CI/CD with an Evaluation Gate (Subproject 2, Milestone 4)
+1. **Evaluation Gate Engine (`src/runwise/evals/gate.py`, `tests/test_eval_gate.py`)**: Automated regression comparator checking accuracy drop ($\le 2\%$), p95 latency inflation ($\le 15\%$), and token cost spikes ($\le 15\%$) against a baseline.
+2. **Deterministic CI Eval Subset (`--split ci`)**: Fast, repeatable stratified evaluation split running without live external API costs during PR checks.
+3. **GitHub Actions Workflow (`.github/workflows/eval-gate.yml`)**: Automated PR workflow running unit tests, executing the evaluation gate, rendering markdown comparison tables to `$GITHUB_STEP_SUMMARY`, and gating PR merges.
+4. **Baseline Artifact & Regression Verification**: Committed baseline metrics artifact and regression drill proving the gate blocks failing PRs.
+

@@ -1,0 +1,32 @@
+groups:
+  - name: runwise_slo_alerts
+    rules:
+      # Alert 1: Error budget burn (HTTP 5xx rate > 5%)
+      - alert: HighHTTPErrorRate
+        expr: (sum(rate(runwise_http_requests_total{status_code=~"5.."}[1m])) or vector(0)) / (sum(rate(runwise_http_requests_total[1m])) > 0) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Runwise Service 5xx HTTP Error Rate exceeds 5%"
+          description: "Over 5% of incoming HTTP requests returned 5xx status codes over the last 1 minute."
+
+      # Alert 2: Latency SLO breach (p95 latency > 4.0s)
+      - alert: HighP95AgentLatency
+        expr: histogram_quantile(0.95, sum(rate(runwise_agent_run_duration_seconds_bucket[5m])) by (le)) > 4.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent p95 latency exceeds 4.0 seconds SLO"
+          description: "95th percentile reasoning loop execution time is {{ $value | humanizeDuration }}."
+
+      # Alert 3: Model Gateway failover active
+      - alert: GatewayFailoverActive
+        expr: sum(rate(runwise_gateway_fallbacks_total[2m])) > 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model Gateway is actively failing over to secondary model"
+          description: "Primary model failure is triggering automated gateway fallback routes."
