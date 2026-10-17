@@ -18,6 +18,7 @@ import litellm
 
 from runwise.agent.trajectory import Trajectory
 from runwise.evals.models import GraderResult, GraderStatus, Task
+from runwise.config import get_provider_config
 
 # Judge system prompt strictly bound to refusal clarity and professional communication
 JUDGE_SYSTEM_PROMPT = """
@@ -48,7 +49,7 @@ class ScopedLLMJudge:
         trajectory: Trajectory,
         task: Task,
         mock_response: str | None = None,
-        model: str = "gemini/gemini-2.5-flash",
+        model: str | None = None,
         api_key: str | None = None,
     ) -> GraderResult:
         """
@@ -70,6 +71,9 @@ class ScopedLLMJudge:
                 reason_code="NOT_REQUIRED",
                 message="Task does not require subjective LLM judging.",
             )
+        cfg = get_provider_config(override_model=model)
+        active_model = cfg.model_identifier
+        active_api_key = cfg.api_key or api_key
 
         final_response = trajectory.final_response or ""
         if not final_response.strip():
@@ -97,13 +101,13 @@ Agent Final Response:
                 raw_json = mock_response
             else:
                 resp = litellm.completion(
-                    model=model,
+                    model=active_model,
                     messages=[
                         {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                         {"role": "user", "content": user_content},
                     ],
                     temperature=0.0,
-                    api_key=api_key or os.getenv("GEMINI_API_KEY"),
+                    api_key=active_api_key,
                 )
                 raw_json = resp.choices[0].message.content or "{}"
 

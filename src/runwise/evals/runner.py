@@ -14,11 +14,19 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import json
+import os
+import sys
 from pathlib import Path
 import threading
 from typing import Any
 import uuid
 
+# Load credentials from .env into os.environ before agent/litellm imports
+from dotenv import load_dotenv
+load_dotenv()
+
+from runwise.config import get_provider_config
+from runwise.observability.tracer import setup_phoenix_tracer, shutdown_phoenix_tracer
 from runwise.agent.loop import AgentLoop
 from runwise.agent.trajectory import Trajectory
 from runwise.domain.db import SandboxDB
@@ -40,7 +48,7 @@ DEFAULT_RESULTS_DIR = PROJECT_ROOT / "results" / "runs"
 def run_single_trial(
     task: Task,
     trial_idx: int,
-    model: str = "gemini/gemini-2.5-flash",
+    model: str | None = None,
     temperature: float = 0.0,
     max_steps: int = 10,
     mock_completions: list[Any] | None = None,
@@ -55,6 +63,8 @@ def run_single_trial(
     4. Evaluates trial across Layered Graders (Tiers 1–4).
     5. Tears down the sandbox.
     """
+    cfg = get_provider_config(override_model=model)
+    resolved_model = cfg.model_identifier
     trial_id = f"{task.id}_tr{trial_idx}"
     conn = SandboxDB.create_connection()
 
@@ -67,7 +77,7 @@ def run_single_trial(
         )
 
         agent = AgentLoop(
-            model=model,
+            model=resolved_model,
             temperature=temperature,
             max_steps=max_steps,
         )
@@ -110,14 +120,15 @@ class EvaluationRunner:
 
     def __init__(
         self,
-        model: str = "gemini/gemini-2.5-flash",
+        model: str | None = None,
         temperature: float = 0.0,
         n_trials: int = 1,
         workers: int = 4,
         results_dir: Path | str = DEFAULT_RESULTS_DIR,
         mock_completions_map: dict[str, list[Any]] | None = None,
     ):
-        self.model = model
+        cfg = get_provider_config(override_model=model)
+        self.model = cfg.model_identifier 
         self.temperature = temperature
         self.n_trials = n_trials
         self.workers = workers
@@ -144,8 +155,8 @@ class EvaluationRunner:
             for i in range(1, self.n_trials + 1):
                 work_items.append((task, i))
 
-        print(f"\n🚀 Starting Run: {run_id}")
-        print(f"📊 Tasks: {len(tasks)} | Trials/Task: {self.n_trials} | Total Trials: {len(work_items)} | Workers: {self.workers}\n")
+        print(f"\n🚀 Starting Run: {run_id}", flush=True)
+        print(f"📊 Tasks: {len(tasks)} | Trials/Task: {self.n_trials} | Total Trials: {len(work_items)} | Workers: {self.workers}\n", flush=True)
 
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
             future_to_item = {
@@ -174,10 +185,10 @@ class EvaluationRunner:
                             f.write(trajectory.model_dump_json() + "\n")
 
                     status_sym = "✅" if record.outcome == TrialOutcome.PASS else "❌"
-                    print(f"  [{completed_count:3d}/{len(work_items):3d}] {status_sym} {task.id} (trial {idx}) -> {record.outcome.value}")
+                    print(f"  [{completed_count:3d}/{len(work_items):3d}] {status_sym} {task.id} (trial {idx}) -> {record.outcome.value}", flush=True)
 
                 except Exception as exc:
-                    print(f"  [{completed_count:3d}/{len(work_items):3d}] ⚠️  {task.id} (trial {idx}) FAILED with exception: {exc}")
+                    print(f"  [{completed_count:3d}/{len(work_items):3d}] ⚠️  {task.id} (trial {idx}) FAILED with exception: {exc}", flush=True)
 
         # Compute benchmark summary
         summary = compute_evaluation_summary(records, k_values=[1, 2, 4])
@@ -219,11 +230,24 @@ class EvaluationRunner:
 
 def main() -> None:
     """CLI Entrypoint for running evaluations."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
+    phoenix_active = setup_phoenix_tracer()
+    default_model = get_provider_config().model_identifier
     parser = argparse.ArgumentParser(description="Runwise Customer Support Agent Evaluation Harness")
     parser.add_argument("--split", choices=["all", "dev", "frozen_holdout"], default="dev", help="Dataset split to evaluate")
     parser.add_argument("--trials", type=int, default=1, help="Number of trials per task (n)")
     parser.add_argument("--workers", type=int, default=4, help="Concurrent worker threads")
-    parser.add_argument("--model", type=str, default="gemini/gemini-2.5-flash", help="LiteLLM model identifier")
+    parser.add_argument("--model", type=str, default=default_model, help="LiteLLM model identifier")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of tasks for quick testing")
     args = parser.parse_args()
 
@@ -239,7 +263,22 @@ def main() -> None:
         workers=args.workers,
     )
     runner.run(tasks)
+    if phoenix_active:
+        from opentelemetry import trace
+        tp = trace.get_tracer_provider()
+        if hasattr(tp, "force_flush"):
+            tp.force_flush()
 
+        print("🔭 Phoenix UI active at: http://localhost:6006")
+        print("👉 Press Ctrl+C in this terminal to shut down Phoenix server and exit...\n")
+        try:
+            import time
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nShutting down Phoenix server...\n")
+        finally:
+            shutdown_phoenix_tracer()
 
 if __name__ == "__main__":
     main()

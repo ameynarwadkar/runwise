@@ -1,0 +1,11 @@
+{
+  "total_tasks": 0,
+  "total_trials": 0,
+  "overall_success_rate": 0.0,
+  "pass_hat_k": {},
+  "pass_at_k": {},
+  "category_success_rates": {},
+  "difficulty_success_rates": {},
+  "split_success_rates": {},
+  "task_summaries": []
+}
