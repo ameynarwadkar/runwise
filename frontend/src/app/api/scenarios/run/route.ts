@@ -58,9 +58,9 @@ export async function POST(req: NextRequest) {
       headers["Authorization"] = `Bearer ${process.env.CLOUD_RUN_ID_TOKEN}`;
     }
 
-    // Call FastAPI backend with a 15-second abort controller
+    // Call FastAPI backend with a 35-second abort controller
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
     try {
       const response = await fetch(`${backendUrl}/v1/demo/scenarios/run`, {
