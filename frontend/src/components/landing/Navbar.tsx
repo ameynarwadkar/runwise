@@ -34,23 +34,19 @@ export function Navbar() {
             </span>
           </Link>
 
-          {/* Real System Status Indicator */}
-          <div className="hidden sm:flex items-center gap-1.5 ml-3 px-2.5 py-1 rounded-full bg-surface border border-surface-border text-xs font-mono text-slate-300">
+          {/* System Status Indicator */}
+          <div className="hidden sm:flex items-center gap-2 ml-3 px-3 py-1 rounded-full bg-surface border border-surface-border text-xs font-mono font-medium text-slate-300">
             <span
               className={`h-2 w-2 rounded-full ${
                 backendReady === true
-                  ? "bg-emerald-400 shadow-[0_0_6px_#10B981]"
-                  : backendReady === false
-                  ? "bg-amber-400 shadow-[0_0_6px_#F59E0B]"
-                  : "bg-slate-500 animate-pulse"
+                  ? "bg-emerald-400 shadow-[0_0_8px_#10B981]"
+                  : "bg-amber-400 shadow-[0_0_8px_#F59E0B]"
               }`}
             />
             <span>
               {backendReady === true
-                ? "Backend Ready"
-                : backendReady === false
-                ? "Offline Mode"
-                : "Checking Status"}
+                ? "Live Service Online"
+                : "Demo Preview"}
             </span>
           </div>
         </div>

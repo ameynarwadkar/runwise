@@ -153,6 +153,11 @@ def sanitize_tool_call(event_content: str, tool_result_dict: dict[str, Any] | No
         elif isinstance(raw_args, dict):
             args = raw_args
 
+    if tool_name == "unknown_tool" and event_content.startswith("Tool "):
+        parts = event_content.split()
+        if len(parts) >= 2:
+            tool_name = parts[1]
+
     # Sanitize result
     status_str = "success"
     result_data = None
@@ -223,9 +228,11 @@ def build_sanitized_timeline(
     seq += 1
 
     # 4. Tool Calls & Results
+    pending_tool_calls: list[dict[str, Any]] = []
     for event in trajectory.events:
         if event.event_type == "MODEL_RESPONSE" and event.tool_calls:
             for tc in event.tool_calls:
+                pending_tool_calls.append(tc)
                 func = tc.get("function", {})
                 t_name = func.get("name", "tool")
                 events.append(
@@ -240,8 +247,7 @@ def build_sanitized_timeline(
                 seq += 1
 
         elif event.event_type == "TOOL_RESULT":
-            raw_tc = None
-            # Find matching call
+            raw_tc = pending_tool_calls.pop(0) if pending_tool_calls else None
             tool_data = event.tool_result or {}
             st = sanitize_tool_call(event.content or "", tool_data, raw_tc)
             sanitized_tools.append(st)
