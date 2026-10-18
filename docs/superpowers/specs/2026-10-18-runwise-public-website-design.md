@@ -1,7 +1,7 @@
 # Technical Design Document: Runwise Public Website & Live Playground
 
 - **Date**: 2026-10-18
-- **Status**: Proposed (Awaiting Implementation Approval)
+- **Status**: APPROVED (Ready for Phased Implementation)
 - **Author**: Antigravity (Pair Programming with ameynarwadkar)
 - **Repository**: [https://github.com/ameynarwadkar/runwise](https://github.com/ameynarwadkar/runwise)
 - **License**: Apache 2.0 (Verified from repository metadata)
@@ -16,7 +16,7 @@ Transform Runwise from an internal production-grade AI agent reliability platfor
 The system will feature:
 1. **Recruiter-Optimized Landing Page (`/`)**: A fast, credible, technical interface built in dark charcoal (`#101114`) with restrained orange accents (`#F97316`), communicating Runwise's engineering value in under 30 seconds and routing technical recruiters directly to the live demo.
 2. **Interactive AI Agent Playground (`/demo`)**: A dual-pane playground connected to the real Runwise FastAPI backend, supporting both fresh deterministic **Scenario Mode** (evaluating deterministic SQL, policy, and hallucination graders) and persistent multi-turn **Conversation Mode**, complemented by a **Verified Benchmark Replay** mode for offline inspection.
-3. **Security, Quotas & Defense-in-Depth**: Strict Vercel-to-Cloud Run service authentication, distributed request and token quotas, per-IP rate-limiting, and an instantaneous runtime kill switch preventing runaway cloud costs.
+3. **Security, Quotas & Defense-in-Depth**: Concrete Vercel-to-Cloud Run Google IAM OIDC authentication, a shared atomic quota store, hard token ceilings, fail-closed safety semantics, and a durable runtime kill switch preventing runaway cloud costs.
 
 ### 1.2 Core Pillars Reused
 Runwise reuses existing production components with zero unnecessary re-architecture:
@@ -34,37 +34,37 @@ flowchart TD
         UI["Next.js 15 UI (/ & /demo)"]
     end
 
-    subgraph Edge["Vercel Edge Network"]
-        BFF["Next.js Route Handlers (/api/run, /api/scenarios, /api/replays)"]
-        BFF_Limiter["IP Rate Limiter & Input Sanitizer (<=1,000 chars)"]
+    subgraph Edge["Vercel Edge Network (BFF Layer)"]
+        BFF["Next.js Route Handlers (/api/run, /api/scenarios/run, /api/replays)"]
+        SharedQuota["Shared Atomic Store (Upstash Redis / Vercel KV)"]
+        BFF_Limiter["Per-IP Limiter & Input Bounds (<=1,000 chars)"]
     end
 
-    subgraph Backend["Google Cloud Run (Private Ingress / Authenticated)"]
+    subgraph GoogleCloud["Google Cloud Platform (Private Managed Ingress)"]
+        IAM_Proxy["Cloud Run IAM Front Proxy (Validates Google OIDC ID Token)"]
         FastAPI["Runwise FastAPI Application (app.py)"]
-        AuthMiddleware["Service Token Auth (X-Runwise-Service-Token)"]
-        QuotaGuard["Distributed Quota & Timeout Guard (30s abort)"]
+        AppMiddleware["Service Secret / Quota Guard (Fail-Closed)"]
         Router["Cost-Aware AutoRouter (<0.1ms)"]
         Agent["AgentLoop (LiteLLM / Gemini 2.5)"]
         Tools["Domain Dispatcher (verify, lookup, cancel, refund)"]
         Sandbox["In-Memory SQLite SandboxDB (:memory:)"]
         Graders["Deterministic Grader Suite (Tiers 1-3)"]
-    end
-
-    subgraph External["Google Cloud Services"]
         Vertex["Google Cloud Vertex AI (Gemini 2.5 Flash / Pro)"]
     end
 
-    UI -->|HTTPS (Browser)| BFF
+    UI -->|HTTPS| BFF
     BFF --> BFF_Limiter
-    BFF_Limiter -->|HTTPS + Service Token| AuthMiddleware
-    AuthMiddleware --> FastAPI
-    FastAPI --> QuotaGuard
-    QuotaGuard --> Router
+    BFF_Limiter <-->|Atomic INCR / Check| SharedQuota
+    BFF_Limiter -->|HTTPS + Google OIDC Bearer Token| IAM_Proxy
+    IAM_Proxy -->|Authorized (roles/run.invoker)| FastAPI
+    FastAPI --> AppMiddleware
+    AppMiddleware <-->|Kill Switch & Spending Guard| SharedQuota
+    AppMiddleware --> Router
     Router --> Agent
     Agent --> Tools
     Tools --> Sandbox
     Agent --> Vertex
-    QuotaGuard --> Graders
+    AppMiddleware --> Graders
     Graders --> Sandbox
 ```
 
@@ -74,7 +74,7 @@ flowchart TD
 
 ### 3.1 Stack & Dependencies
 - **Framework**: Next.js 15 (App Router), React 19, TypeScript 5.5+.
-- **Styling**: Tailwind CSS (v3/v4 compatible), Vanilla CSS tokens for fine layout control.
+- **Styling**: Tailwind CSS, Vanilla CSS tokens for fine layout control.
   - Background: Dark charcoal `#101114`.
   - Surface cards: `#16181D` with subtle borders (`#232730`).
   - Typography: Off-white primary (`#F3F4F6`), muted slate secondary (`#9CA3AF`).
@@ -182,7 +182,7 @@ To prevent state contamination and invalid evaluation claims:
 | **Database State** | Fresh, pristine in-memory SQLite sandbox | Preserved active session sandbox | Static captured trace |
 | **Deterministic Graders**| **Evaluated (Tiers 1–3)** | **NOT_EVALUATED** (Strictly enforced) | Historical recorded verdict |
 | **Evaluation Status**| `PASS` or `FAIL` with granular evidence | `NOT_EVALUATED` ("Ad-hoc multi-turn query")| `REPLAY (VERIFIED PASS)` |
-| **Inference Source** | Live Vertex AI | Live Vertex AI | Local sanitized JSON artifact |
+| **Inference Source** | Live Vertex AI | Live Vertex AI | Versioned sanitized JSON artifact |
 
 ### 5.2 The 5 Ground-Truth Scenarios (Backed by Real Fixtures)
 1. **Scenario 1: Simple Order Status & Items (Flash / Low Risk)**
@@ -313,7 +313,7 @@ class AgentRunResponse(BaseModel):
     # Additive optional fields
     features_detected: list[str] = Field(default_factory=list)
     cost_usd: float | None = None
-    is_replay: bool = False
+    is_replay: bool = False             # Server-controlled, never client-forged
     tool_calls: list[SanitizedToolCall] = Field(default_factory=list)
     events: list[SanitizedTimelineEvent] = Field(default_factory=list)
     evaluation: EvaluationSummarySchema | None = None
@@ -329,55 +329,68 @@ To prevent leaking sensitive internals:
    - `TrajectoryPolicyGrader.evaluate()` and `SafetyInvariantAuditor.evaluate()` accept this exact object and the active `session.conn` without conversion.
    - Grader outcomes are serialized into `EvaluationSummarySchema`.
 
+### 6.4 Versioned Replay Artifacts (`GET /v1/demo/replays`)
+- Exported from actual empirical trajectories recorded in `results/routing/baseline_cheap/` and `baseline_strong/`.
+- Packaged as versioned, read-only JSON fixtures: `data/replays/v1/`.
+- Each artifact preserves exact provenance: `task_id`, `run_id`, `timestamp_iso`, `model`, `prompt_tokens`, `completion_tokens`, `latency_ms`, and `grader_verdict`.
+- *Strict Rule*: Replay data is never synthetic or fabricated. Unverified data is NEVER labeled as a verified PASS.
+
 ---
 
 ## 7. Security, Quotas & Defense-in-Depth
 
-### 7.1 Secure Vercel-to-Cloud Run Authentication
-- **Problem**: Directly exposing FastAPI to the public internet allows malicious actors to bypass rate limits or invoke unbounded LLM generations.
-- **Solution**:
-  - FastAPI mounts an authentication middleware enforcing `X-Runwise-Service-Token`.
-  - When deployed on Cloud Run, ingress can be set to require IAM authentication or the shared service secret injected into Vercel's environment variables (`RUNWISE_BACKEND_SECRET`).
-  - Direct browser calls to Cloud Run without this header receive `401 Unauthorized`.
-  - CORS on FastAPI is restricted strictly to the Vercel production domain and local development (`http://localhost:3000`).
+### 7.1 Concrete Vercel-to-Cloud Run Authentication Architecture
+To avoid conflating application secrets with infrastructure security:
 
-### 7.2 Quota Controls & Concurrency Bounds
-1. **Public Demo Request Boundary**:
-   - Enforced at Next.js BFF (`/api/run`): Maximum prompt length strictly validated at **1,000 characters** (HTTP 400 if exceeded).
-2. **Distributed Global Quotas**:
-   - Shared daily budget tracker (in-memory atomic counter with hourly persistent flush, or Vercel KV / Upstash Redis if configured):
-     - **Global Daily Cap**: 500 live inference requests / day.
-     - **Per-IP Rate Limit**: 10 requests / minute, 50 requests / day.
-     - When exceeded, API returns HTTP 429: `"Demo daily inference quota exhausted. Please explore the verified benchmark traces in Replay Mode."`
-3. **Per-Request Timeouts & Cancellation**:
-   - Each agent execution is wrapped in `asyncio.wait_for(agent_coro, timeout=30.0)`.
-   - On timeout, the coroutine is cancelled and the active LiteLLM HTTP stream is aborted immediately, preventing orphaned requests from generating continuous token costs.
-4. **Generation Constraints**:
-   - `max_tokens=600` per turn to prevent recursive hallucination loops.
-   - `max_steps=10` per session to enforce execution bounds.
-5. **Runtime Emergency Kill Switch**:
-   - FastAPI exposes `GET /readyz` and an authenticated admin toggle `POST /v1/admin/demo/toggle` (or reads a dynamically polled environment flag `RUNWISE_DEMO_DISABLED=true`).
-   - When triggered, all live `/v1/demo/scenarios/run` and `/v1/agent/run` calls instantly redirect to Replay Mode with zero Cloud Run container rebuilds.
+1. **Google Cloud Run IAM Front Proxy (Infrastructure Transport Auth)**:
+   - Cloud Run ingress is configured with `--no-allow-unauthenticated`.
+   - Vercel Edge / Serverless Functions hold a Google Service Account private key in environment variables (`GCP_SERVICE_ACCOUNT_KEY`).
+   - On each upstream backend invocation, the Vercel BFF generates a Google-signed OpenID Connect (OIDC) ID token with the target Cloud Run URL as audience (`https://<service-name>-<hash>.run.app`).
+   - The token is transmitted via standard `Authorization: Bearer <oidc_id_token>`.
+   - Google's Cloud Run front proxy cryptographically validates the token against IAM role `roles/run.invoker`. Direct unauthenticated curl calls from the browser or unauthorized actors receive `HTTP 403 Forbidden` at Google's network edge before ever hitting the FastAPI container.
+2. **Application-Level Shared Secret (`X-Runwise-Service-Token`)**:
+   - An additional internal header verified by FastAPI middleware, ensuring defence-in-depth during local staging / containerized integration tests.
+3. **CORS Boundary**:
+   - CORS is treated as browser-origin security, not an authentication boundary. Allowed origins are restricted strictly to the verified Vercel production domain and `localhost:3000`.
+
+### 7.2 Shared Atomic Quota Store & Fail-Closed Semantics
+To guarantee limits hold across multi-instance Vercel and Cloud Run autoscaling:
+
+1. **Shared Store Architecture**:
+   - Backed by an atomic key-value store (Upstash Redis / Vercel KV REST API via token/URL).
+   - Atomic primitives (`INCR`, `EXPIRE`) track global and per-IP windows:
+     - Global daily model request counter: `runwise:quota:global:YYYY-MM-DD` (Cap: 500 requests/day).
+     - Per-IP sliding rate limit: `runwise:quota:ip:<ip_hash>:YYYY-MM-DD-HH-MM` (Cap: 10 requests/min, 50 requests/day).
+2. **Fail-Closed Policy**:
+   - If the shared quota store or kill-switch key cannot be reached or errors out, the service **FAILS CLOSED** for live inference. It immediately rejects live model dispatch and redirects users to verified Replay Mode.
+
+### 7.3 Realistic Cost Assumptions & Cumulative Spending Guards
+1. **Realistic Model Economics & Retry Exposure**:
+   - 500 requests/day is NOT a hard spending ceiling. A multi-turn inquiry to Gemini 2.5 Pro consuming 15,000 tokens across 3 tool steps costs ~$0.02 per request. 500 such requests cost $10.00/day ($300.00/month).
+   - In addition, LiteLLM gateway retries on provider 429/5xx and fallback calls can generate unexpected auxiliary token consumption.
+   - GCP Budget Alerts are asynchronous notifications (emails/webhooks); they do NOT stop running containers or billable API calls.
+2. **Software Hard Spending Ceilings**:
+   - Cumulative daily token ceiling: 500,000 tokens / day across all users. When reached, live inference shuts down automatically.
+   - Per-request limits: `max_tokens=600` per turn, `max_steps=10` per session, input prompt capped at 1,000 characters.
+   - Hard execution timeout: 30.0s with immediate cancellation of underlying LiteLLM/Vertex HTTP client tasks to prevent orphaned spend.
+   - **Zero Unauthorized Cloud Provisioning**: No billable GCP resources or cloud deployments will be executed without explicit user authorization.
+
+### 7.4 Durable, Shared Kill Switch
+- The kill-switch state is stored in the shared store: `runwise:kill_switch:live_disabled = "true"`.
+- It can be triggered instantly via an authenticated management endpoint (`POST /v1/admin/demo/kill-switch` with admin secret) or directly in the Redis dashboard.
+- Disables all new live inference across all running Cloud Run instances within 1 second without requiring container rebuilds or redeployment.
 
 ---
 
 ## 8. Implementation Phases
 
-### Phase 1: Backend Contracts, Sanitization & Grader Integration (Python)
-- [ ] Add `SanitizedToolCall`, `SanitizedTimelineEvent`, and `EvaluationSummarySchema` to `src/runwise/service/schemas.py`.
-- [ ] Implement serialization helpers extracting clean events and allowlisted tool data from `Trajectory`.
-- [ ] Add `POST /v1/demo/scenarios/run` to `src/runwise/service/app.py`, orchestrating fresh sandbox execution and deterministic grading.
-- [ ] Add `GET /v1/demo/scenarios` and `GET /v1/demo/replays` endpoints.
-- [ ] Mount service token verification middleware and CORS middleware.
-- [ ] Verify that all 146 existing tests pass and add contract tests for the new demo endpoints.
-
-### Phase 2: Next.js Foundation & Shared Design System (Frontend)
-- [ ] Initialize `frontend/` with Next.js 15 App Router, TypeScript, Tailwind CSS, and Lucide icons.
+### Phase 1: Frontend Foundation & Shared Design System
+- [ ] Initialize `frontend/` using Next.js 15 App Router, TypeScript, Tailwind CSS, and Lucide icons.
 - [ ] Establish design tokens (dark charcoal `#101114`, surface `#16181D`, border `#232730`, orange `#F97316`).
 - [ ] Build shared TypeScript types (`types.ts`) matching backend schemas.
-- [ ] Implement Next.js BFF API routes (`/api/run`, `/api/scenarios/run`, `/api/replays`) with client-side IP throttling and backend error isolation.
+- [ ] Implement local mock client to allow frontend validation before backend changes.
 
-### Phase 3: Recruiter-Optimized Landing Page (`/`)
+### Phase 2: Recruiter-Optimized Landing Page (`/`)
 - [ ] Build Navbar with live backend status badge and `Try Live Demo` CTA.
 - [ ] Implement Hero section with 30-second value prop and visual architecture preview.
 - [ ] Build Simplified 3-View Architecture Explorer (Execution, Reliability, Operations).
@@ -385,23 +398,39 @@ To prevent leaking sensitive internals:
 - [ ] Build Precise Benchmark Comparator displaying `docs/ROUTING_REPORT.md` evidence.
 - [ ] Build Minimal Contact Section with verified LinkedIn, GitHub, and Email links.
 
-### Phase 4: Live Playground & Execution Inspector (`/demo`)
+### Phase 3: Live Playground & Execution Inspector (`/demo`)
 - [ ] Build 55/45 split desktop layout and responsive mobile tabbed layout.
 - [ ] Implement Scenario Mode with 5 ground-truth scenario cards.
 - [ ] Implement Conversation Mode with multi-turn chat stream and NOT_EVALUATED indicator.
-- [ ] Build 4-tab Execution Inspector:
-  - *Tab 1: Execution Trace Timeline* (sanitized chronological flow).
-  - *Tab 2: Tool Invocations* (collapsible inputs, outputs, status).
-  - *Tab 3: Deterministic Evaluation Matrix* (Tiers 1–3 badges & evidence).
-  - *Tab 4: Routing Diagnostics* (complexity meter, regex tags, threshold).
+- [ ] Build 4-tab Execution Inspector (Timeline, Tool Calls, Evals Matrix, Routing Diagnostics).
 - [ ] Implement Replay Mode (`[ VERIFIED BENCHMARK REPLAY ]`) loading verified trace artifacts.
 - [ ] Implement Offline Graceful Degradation banner when backend is unavailable.
 
-### Phase 5: Verification, Testing & Documentation
+### Phase 4: Backend API Contracts, Sanitization & Grader Integration (Python)
+- [ ] Add `SanitizedToolCall`, `SanitizedTimelineEvent`, and `EvaluationSummarySchema` to `src/runwise/service/schemas.py`.
+- [ ] Implement serialization helpers extracting clean events and allowlisted tool data from `Trajectory`.
+- [ ] Add `POST /v1/demo/scenarios/run` to `src/runwise/service/app.py`, orchestrating fresh sandbox execution and deterministic grading.
+- [ ] Add `GET /v1/demo/scenarios` and `GET /v1/demo/replays` endpoints.
+- [ ] Package versioned sanitized replay artifacts in `data/replays/v1/`.
+- [ ] Mount service token verification middleware and CORS middleware.
+- [ ] Verify that all 146 existing tests pass and add contract tests for the new demo endpoints.
+
+### Phase 5: Verification, Testing & Codebase Review
 - [ ] Run full Python test suite (`uv run pytest tests/`).
 - [ ] Run frontend type-check, lint, and production build (`npm run lint`, `npm run build`).
 - [ ] Run automated end-to-end integration test verifying frontend BFF $\to$ FastAPI scenario execution.
 - [ ] Update `README.md` with frontend architecture, setup commands, and deployment guide.
+
+### Phase 6: Public Deployment & Acceptance Testing (Upon Explicit Approval)
+- [ ] Deploy Next.js frontend to Vercel (Hobby tier, $0/month).
+- [ ] Build and deploy containerized FastAPI backend to Google Cloud Run (private ingress).
+- [ ] Configure Vercel Google IAM OIDC authentication (`roles/run.invoker`).
+- [ ] Execute live HTTPS acceptance tests:
+  - Verify landing page loads and navigates smoothly.
+  - Verify unauthenticated direct curl to Cloud Run returns HTTP 403 Forbidden.
+  - Verify live Scenario Mode execution routes correctly to Flash / Pro.
+  - Verify per-IP rate limiting and fail-closed kill switch behavior.
+  - Verify zero-downtime rollback drill.
 
 ---
 
@@ -424,7 +453,7 @@ To prevent leaking sensitive internals:
    - If the backend is offline or daily quota is exhausted, users can inspect verified traces via Replay Mode.
    - The landing page functions 100% independently of backend availability.
 5. **Security & Cost Guardrails**:
-   - Cloud Run backend requires service authentication; raw credentials never reach the browser.
+   - Cloud Run backend requires Google IAM OIDC authentication; raw credentials never reach the browser.
    - Max prompt length (1,000 chars), max completion tokens (600), and execution timeout (30s) are strictly enforced.
    - Emergency kill switch can disable live inference without container redeployments.
 
@@ -436,14 +465,14 @@ To prevent leaking sensitive internals:
 | :--- | :--- | :--- | :--- |
 | **Frontend** | Vercel Deployment | Next.js 15 App Router on Vercel Hobby Tier | $0.00 / month |
 | **Backend** | Google Cloud Run | Stateless container, 1 vCPU, 512MB RAM, `min-instances=0` | $0.00 (within 2M free requests/mo) |
-| **Model API** | Google Vertex AI | ADC via Cloud Run Service Account (Vertex AI User role) | ~$0.10 – $0.50 / month (500 queries) |
-| **Security** | Service Auth Token | `X-Runwise-Service-Token` shared secret between Vercel and Cloud Run | No cost |
+| **Model API** | Google Vertex AI | ADC via Cloud Run Service Account (Vertex AI User role) | Controlled (Token ceiling + quota) |
+| **Security** | Cloud Run IAM Auth | Google IAM OIDC token generated by Vercel BFF service identity | No cost |
 | **Security** | Least Privilege | Cloud Run service identity granted only `aiplatform.user` | No cost |
-| **Abuse Guard** | Per-IP Rate Limit | Max 10 req/min, 50 req/day per IP | No cost |
-| **Abuse Guard** | Global Daily Quota | Max 500 live model runs / day across all users | Hard cost ceiling (< $1.00/mo) |
+| **Abuse Guard** | Per-IP Rate Limit | Max 10 req/min, 50 req/day per IP in shared atomic store | No cost |
+| **Abuse Guard** | Daily Token Ceiling| Max 500k tokens / day across all users | Hard spending stop |
 | **Abuse Guard** | Request Timeout | 30s hard timeout with underlying LiteLLM task cancellation | Eliminates orphaned costs |
-| **Kill Switch** | Live Disable Flag | `RUNWISE_DEMO_DISABLED=true` forces Replay Mode | Instant zero-downtime cost stop |
+| **Kill Switch** | Live Disable Flag | Shared atomic flag (`runwise:kill_switch`) forces Replay Mode | Instant zero-downtime cost stop |
 
 ---
 
-*This specification is prepared for user review prior to implementation.*
+*This specification is approved for phased implementation. Cloud resources will not be deployed without explicit authorization.*
