@@ -62,7 +62,7 @@ export function ContactSection() {
                 <Mail className="h-5 w-5 text-slate-400 group-hover:text-brand-orange transition-colors" />
                 <div>
                   <div className="text-sm font-semibold text-white">Email</div>
-                  <div className="text-xs text-slate-400 font-mono">amey.cmyo@gmail</div>
+                  <div className="text-xs text-slate-400 font-mono">{PROJECT_METADATA.email}</div>
                 </div>
               </div>
               <ArrowUpRight className="h-4 w-4 text-slate-500 group-hover:text-white transition-colors" />

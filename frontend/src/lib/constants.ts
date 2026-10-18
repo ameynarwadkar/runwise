@@ -12,7 +12,7 @@ export const PROJECT_METADATA = {
   repoUrl: "https://github.com/ameynarwadkar/runwise",
   authorName: "Amey Narwadkar",
   linkedinUrl: "https://linkedin.com/in/ameynarwadkar",
-  email: "amey.cmyo@gmail.com",
+  email: "amey.narwadkar1729@gmail.com",
   license: "Apache 2.0",
 };
 
