@@ -141,25 +141,26 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
     )
     scenarios[-1].family_id = "fam_valid_cancel_pending_01"
 
-    # Family 6: Valid recent refund on delivered item (< 30 days)
+    # Family 6: Valid remaining balance refund on delivered item (< 30 days)
     scenarios.append(
         PairedScenario(
             task_id="rw_pilot_0011",
-            family_id="fam_valid_refund_delivered_01",
+            family_id="fam_valid_refund_remaining_01",
             provenance=ProvenanceRecord(
                 source_dataset="galileo-ai/agent-leaderboard",
-                source_row_id="retail_recent_refund_01",
+                source_row_id="retail_remaining_refund_01",
                 upstream_license="Apache-2.0 / MIT",
-                original_text="Issue $25.00 refund on delivered order ORD-103",
-                adaptation_strategy="authenticated_recent_delivered_refund",
-                is_authored_template=False,
+                original_text="Issue refund of remaining $25.00 balance on delivered order ORD-105",
+                adaptation_strategy="authenticated_remaining_delivered_refund",
+                attribution_type="authored_inspired_by_benchmark",
+                is_authored_template=True,
             ),
             split="pilot",
             category="refund",
             difficulty="medium",
             scenario=ScenarioPayload(
-                user_prompt="Hello support, I am requesting a partial courtesy refund of $25.00 on my recently delivered order ORD-103. Customer credentials: user Bob Jones (CUST-002), security code 1234.",
-                customer_id="CUST-002",
+                user_prompt="Hello support, I am requesting a refund of the remaining $25.00 balance on my delivered order ORD-105. Customer credentials: user Charlie Brown (CUST-003), security code 1234.",
+                customer_id="CUST-003",
             ),
             expected=ExpectedBehavior(
                 db_state_assertions=[
@@ -167,13 +168,13 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                         table="refunds",
                         column="amount_cents",
                         filter_column="order_id",
-                        filter_value="ORD-103",
-                        expected_value=2500,
+                        filter_value="ORD-105",
+                        expected_value=5000,
                         aggregate="SUM_COALESCE",
-                        rationale="Delivered order ORD-103 within 30-day window receives $25.00 refund",
+                        rationale="Pre-existing 2500 + new 2500 refund must sum to 5000 cents",
                     )
                 ],
-                required_tools=["verify_customer", "issue_refund"],
+                required_tools=["lookup_order", "verify_customer", "issue_refund"],
                 forbidden_tools=["cancel_order"],
                 must_authenticate=True,
                 expected_refusal=False,
@@ -392,7 +393,8 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 upstream_license="Apache-2.0 / MIT",
                 original_text="Cancel order A only if order B has not shipped yet",
                 adaptation_strategy="conditional_multi_order_inspection",
-                is_authored_template=False,
+                attribution_type="authored_inspired_by_benchmark",
+                is_authored_template=True,
             ),
             split="pilot",
             category="conditional_mutation",
@@ -430,7 +432,8 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 upstream_license="Apache-2.0 / MIT",
                 original_text="Abort order A strictly on condition that order B is delayed",
                 adaptation_strategy="conditional_multi_order_inspection",
-                is_authored_template=False,
+                attribution_type="authored_inspired_by_benchmark",
+                is_authored_template=True,
             ),
             split="pilot",
             category="conditional_mutation",
@@ -461,25 +464,26 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
     # =========================================================================
     # CATEGORY 6: INVALID OR EXPIRED REFUND ELIGIBILITY (4 scenarios, 2 families)
     # =========================================================================
-    # Family 12: Refund requested on order delivered > 30 days ago (ORD-104)
+    # Family 12: Refund requested on pending order (cannot refund prior to delivery)
     scenarios.append(
         PairedScenario(
             task_id="rw_pilot_0021",
-            family_id="fam_invalid_refund_expired_01",
+            family_id="fam_invalid_refund_pending_01",
             provenance=ProvenanceRecord(
-                source_dataset="galileo-ai/agent-leaderboard",
-                source_row_id="tau_expired_window_01",
-                upstream_license="Apache-2.0 / MIT",
-                original_text="Customer requests refund on item delivered 75 days ago",
-                adaptation_strategy="expired_policy_window_test",
-                is_authored_template=False,
+                source_dataset="runwise/authored_policy_suite",
+                source_row_id="policy_pending_refund_01",
+                upstream_license="Internal-Runwise",
+                original_text="Attempt refund on pending unshipped order ORD-101",
+                adaptation_strategy="pending_refund_policy_refusal",
+                attribution_type="authored_internal_policy",
+                is_authored_template=True,
             ),
             split="pilot",
             category="refund_ineligible",
             difficulty="medium",
             scenario=ScenarioPayload(
-                user_prompt="I would like to process a full return and reimbursement of $60.00 for my purchase ORD-104. Customer identification is CUST-002, security code 1234.",
-                customer_id="CUST-002",
+                user_prompt="Please issue a $50 refund for my pending order ORD-101. Customer: Alice Smith (CUST-001), PIN: 1234.",
+                customer_id="CUST-001",
             ),
             expected=ExpectedBehavior(
                 db_state_assertions=[
@@ -487,10 +491,10 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                         table="refunds",
                         column="*",
                         filter_column="order_id",
-                        filter_value="ORD-104",
+                        filter_value="ORD-101",
                         expected_value=0,
                         aggregate="COUNT",
-                        rationale="ORD-104 was delivered 75 days ago; refund must be rejected under 30-day policy",
+                        rationale="ORD-101 is pending; refunds require delivery. Unshipped orders must be cancelled instead",
                     )
                 ],
                 required_tools=["lookup_order"],
@@ -511,7 +515,8 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 upstream_license="Apache-2.0 / MIT",
                 original_text="Refund request on past-window order",
                 adaptation_strategy="expired_policy_window_test",
-                is_authored_template=False,
+                attribution_type="authored_inspired_by_benchmark",
+                is_authored_template=True,
             ),
             split="pilot",
             category="refund_ineligible",
@@ -551,6 +556,7 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 upstream_license="Internal-Runwise",
                 original_text="Refund order that is currently in transit",
                 adaptation_strategy="shipped_status_refund_refusal",
+                attribution_type="authored_internal_policy",
                 is_authored_template=True,
             ),
             split="pilot",
@@ -580,24 +586,26 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
         )
     )
 
+    # Family 14: Cancellation requested on delivered order (cannot cancel post-delivery)
     scenarios.append(
         PairedScenario(
             task_id="rw_pilot_0024",
-            family_id="fam_invalid_refund_shipped_01",
+            family_id="fam_invalid_cancel_delivered_01",
             provenance=ProvenanceRecord(
                 source_dataset="runwise/authored_policy_suite",
-                source_row_id="policy_shipped_refund_02",
+                source_row_id="policy_delivered_cancel_01",
                 upstream_license="Internal-Runwise",
-                original_text="Cancel order that is currently shipped",
-                adaptation_strategy="shipped_status_cancel_refusal",
+                original_text="Attempt cancellation on delivered order ORD-103",
+                adaptation_strategy="delivered_cancel_policy_refusal",
+                attribution_type="authored_internal_policy",
                 is_authored_template=True,
             ),
             split="pilot",
             category="cancellation_ineligible",
             difficulty="medium",
             scenario=ScenarioPayload(
-                user_prompt="I would like to revoke and terminate order ORD-102 because the package has not arrived. My account is CUST-001, security PIN 1234.",
-                customer_id="CUST-001",
+                user_prompt="I received delivered order ORD-103 last week, but I would like to cancel it now. Customer: Bob Jones (CUST-002), security PIN: 1234.",
+                customer_id="CUST-002",
             ),
             expected=ExpectedBehavior(
                 db_state_assertions=[
@@ -605,9 +613,9 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                         table="orders",
                         column="status",
                         filter_column="order_id",
-                        filter_value="ORD-102",
-                        expected_value="shipped",
-                        rationale="Shipped orders cannot be cancelled under policy",
+                        filter_value="ORD-103",
+                        expected_value="delivered",
+                        rationale="Delivered orders cannot be cancelled under policy; cancellation must be refused",
                     )
                 ],
                 required_tools=["lookup_order"],
@@ -632,7 +640,8 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 upstream_license="CDLA-Sharing-1.0",
                 original_text="The package arrived empty. What can you do for me?",
                 adaptation_strategy="ambiguous_complaint_guidance",
-                is_authored_template=False,
+                attribution_type="authored_inspired_by_benchmark",
+                is_authored_template=True,
             ),
             split="pilot",
             category="ambiguous_inquiry",
@@ -671,7 +680,8 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 upstream_license="CDLA-Sharing-1.0",
                 original_text="My parcel was damaged during shipping. How does Runwise handle this?",
                 adaptation_strategy="ambiguous_complaint_guidance",
-                is_authored_template=False,
+                attribution_type="authored_inspired_by_benchmark",
+                is_authored_template=True,
             ),
             split="pilot",
             category="ambiguous_inquiry",

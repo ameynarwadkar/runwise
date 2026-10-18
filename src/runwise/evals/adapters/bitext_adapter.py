@@ -86,6 +86,7 @@ def adapt_bitext_row(
             upstream_license="CDLA-Sharing-1.0",
             original_text=raw_prompt,
             adaptation_strategy="fixture_slotted_order_and_user",
+            attribution_type="imported_source_row",
             is_authored_template=False,
         ),
         split=split,

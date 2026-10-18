@@ -55,6 +55,7 @@ def adapt_banking77_row(
             upstream_license="MIT / CC-BY-4.0",
             original_text=raw_text,
             adaptation_strategy=f"financial_negation_order_{order_id}",
+            attribution_type="imported_source_row",
             is_authored_template=False,
         ),
         split=split,

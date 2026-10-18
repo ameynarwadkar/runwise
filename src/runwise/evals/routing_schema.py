@@ -17,6 +17,11 @@ class ProvenanceRecord(BaseModel):
     upstream_license: str
     original_text: str
     adaptation_strategy: str
+    attribution_type: Literal[
+        "imported_source_row",
+        "authored_inspired_by_benchmark",
+        "authored_internal_policy",
+    ] = "authored_internal_policy"
     is_authored_template: bool = False
 
 
