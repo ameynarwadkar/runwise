@@ -16,12 +16,15 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from runwise.agent.loop import AgentLoop
 from runwise.config import get_provider_config
 from runwise.domain.db import SandboxDB
 from runwise.service.gateway import ModelGateway
 from runwise.service.canary import CanaryRouter, get_canary_router
+from runwise.service.cost import calculate_cost_breakdown
+from runwise.service.demo import build_sanitized_timeline, demo_router
 from runwise.service.metrics import (
     ACTIVE_SESSIONS,
     AGENT_RUN_DURATION_SECONDS,
@@ -30,18 +33,20 @@ from runwise.service.metrics import (
     AGENT_TOOL_CALLS_TOTAL,
     CANARY_LATENCY_SECONDS,
     CANARY_REQUESTS_TOTAL,
+    ROUTER_DECISIONS_TOTAL,
     get_metrics_payload,
 )
 from runwise.service.middleware import ObservabilityMiddleware
 from runwise.service.schemas import (
     AgentRunRequest,
     AgentRunResponse,
+    EvaluationSummarySchema,
+    GraderStatusEnum,
     HealthResponse,
     TokenUsageSchema,
 )
 from runwise.service.session import SessionManager
 from runwise.service.auto_router import AutoRouter, AutoRouterConfig
-from runwise.service.metrics import ROUTER_DECISIONS_TOTAL
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +103,19 @@ def create_app(
     # 1. Mount Observability and Request Correlation Middleware
     app.add_middleware(ObservabilityMiddleware)
 
-    # 2. Initialize state components
+    # 2. Configure CORS for frontend access
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # 3. Mount Public Demo & Scenario Endpoints
+    app.include_router(demo_router)
+
+    # 4. Initialize state components
     mgr = session_manager or SessionManager()
     gw = gateway or ModelGateway()
     # Pass gw.primary_model so AgentLoop and ModelGateway stay aligned in telemetry
@@ -113,6 +130,7 @@ def create_app(
     app.state.gateway = gw
     app.state.agent_loop = loop
     app.state.canary_router = cr
+    app.state.auto_router = get_auto_router()
     
     # ========================================================================
     # OBSERVABILITY & HEALTH ENDPOINTS
@@ -284,7 +302,25 @@ def create_app(
                     t_result = event.tool_result or {}
                     t_status = "success" if t_result.get("success", False) else "error"
                     AGENT_TOOL_CALLS_TOTAL.labels(tool_name=t_name, status=t_status).inc()
-            # 5. Format response
+            # 5. Calculate cost, format sanitized timeline and tool calls
+            cost_breakdown = calculate_cost_breakdown(
+                model=model_name,
+                prompt_tokens=trajectory.usage.prompt_tokens,
+                completion_tokens=trajectory.usage.completion_tokens,
+            )
+            eval_summary = EvaluationSummarySchema(
+                overall_status=GraderStatusEnum.NOT_EVALUATED,
+                explanation="Ad-hoc conversational turn without registered ground truth assertions.",
+            )
+            events, tool_calls = build_sanitized_timeline(
+                trajectory=trajectory,
+                complexity_score=complexity_score,
+                routing_reason=routing_reason,
+                model_name=model_name,
+                evaluation=eval_summary,
+            )
+
+            # 6. Format response
             return AgentRunResponse(
                 session_id=payload.session_id,
                 response=trajectory.final_response,
@@ -301,13 +337,15 @@ def create_app(
                 variant=decision.variant,
                 complexity_score=complexity_score,
                 routing_reason=routing_reason,
+                features_detected=features_detected if 'features_detected' in locals() else [],
+                cost_usd=cost_breakdown.total_cost_usd,
+                is_replay=False,
+                tool_calls=tool_calls,
+                events=events,
+                evaluation=eval_summary,
             )
         except Exception as exc:
             logger.exception("Error executing agent run for session %s: %s", payload.session_id, exc)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Agent execution encountered an unrecoverable error: {exc}",
-            )
             model_for_metrics = "unknown_model"
             if 'decision' in locals():
                 model_for_metrics = decision.model if decision.model else "unknown_model"
@@ -315,7 +353,6 @@ def create_app(
                 model_for_metrics = loop.model if loop.model else "unknown_model"
             
             AGENT_RUNS_TOTAL.labels(model=model_for_metrics, exit_reason="error").inc()
-            # If using canary, record canary failure
             if 'decision' in locals() and decision.is_canary:
                 CANARY_REQUESTS_TOTAL.labels(
                     variant=decision.variant,

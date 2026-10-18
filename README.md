@@ -1,7 +1,7 @@
 # Runwise: Production-Grade Customer Support Agent & LLMOps Service
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![Test Suite](https://img.shields.io/badge/tests-146%2F146%20passing-brightgreen.svg)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-151%2F151%20passing-brightgreen.svg)](tests/)
 [![Benchmark Reliability](https://img.shields.io/badge/eval%20pass%20rate-100.0%25-success.svg)](docs/BENCHMARK_REPORT.md)
 [![Cost Optimization](https://img.shields.io/badge/prompt%20cost%20drop--33.2%25-blueviolet.svg)](docs/CAPACITY_AND_COST.md)
 [![Observability](https://img.shields.io/badge/OTel%20%7C%20Prometheus-instrumented-orange.svg)](ops/)
@@ -22,7 +22,7 @@ Every production performance metric measured against an established baseline:
 | **Benchmark Accuracy** | 94.3% (Initial Dev Run) | **100.0%** (50 tasks / 150 trials) | **+5.7%** (0.0% holdout generalization gap) |
 | **Cost per 1k Successes** | $0.0786 (`v1.0` Prompt) | **$0.0525** (`v1.1_trimmed`) | **-33.2%** direct LLM cost reduction |
 | **System Prompt Tokens** | 808 tokens (~2,502 chars) | **460 tokens** (~1,177 chars) | **-43.1%** input token compression |
-| **Automated Test Suite** | 0 tests | **146 / 146 passed** | **100% test coverage** across 27 modules |
+| **Automated Test Suite** | 0 tests | **151 / 151 passed** | **100% test coverage** across 28 modules |
 | **Availability (SLO)** | $\ge 99.0\%$ | **100.0%** | Zero 5xx errors under concurrent load |
 | **Canary Rollback Speed**| 5–10 min (container rebuild) | **< 200 ms** (dynamic hot-reload) | **Instant zero-rebuild rollback** |
 | **Cost-Aware Auto-Routing** | $8.33 / 1k (Always Pro) | **$3.54 / 1k** (Adaptive Router)* | **-57.5% cost**, **-63.0% p50 latency** (3.82s vs 10.33s) at 100% accuracy (*trace replay) |
@@ -83,12 +83,25 @@ To ensure absolute technical credibility, all numbers in this repository are cat
   - Safely offloads **65.7% of queries to Flash** while reserving Pro for adversarial and complex edge cases.
 - **Prometheus Telemetry & Grafana Visualizations**: Tracks `runwise_router_decisions_total{selected_model, risk_tier}` on donut and bar-gauge panels.
 
+### Subproject 4: Public Website & Interactive Live Playground (`frontend/`)
+- **Next.js 15 & React 19 App Router**: Recruiter-optimized, 30-second portfolio landing page (`/`) on dark charcoal (`#101114`) with restrained orange accents (`#F97316`).
+- **Interactive Architecture Explorer**: 3 tabbed system architectural diagrams:
+  - *Execution Architecture*: Request &rarr; Semantic AutoRouter &rarr; Sandboxed AgentLoop &rarr; Isolated SQLite & Tools.
+  - *Reliability Architecture*: 50-Task Harness &rarr; Tiers 1-3 Deterministic Graders &rarr; CI/CD Regression Gate.
+  - *Operations Architecture*: ModelGateway Fallback &rarr; OpenTelemetry & Prometheus &rarr; Grafana & Alerting.
+- **Dual-Pane Live Playground (`/demo`)**:
+  - *Scenario Mode*: 5 canonical scenarios backed by isolated in-memory SQLite sandbox fixtures and verified with deterministic graders.
+  - *Conversation Mode*: Free-form multi-turn conversational agent turns against the live backend, strictly labeling ad-hoc turns as `NOT_EVALUATED`.
+  - *4-Tab Execution Inspector*: Chronological Execution Timeline, Allowlisted Tool Calls, Deterministic Evaluation Matrix, and Real-time Routing Diagnostics.
+  - *Offline Resilient*: Embedded versioned benchmark replay artifacts allow zero-dependency demonstration if the live backend is offline.
+
 ---
 
 ## 4. Quickstart & Verification Guide
 
 ### 4.1 Prerequisites
 - Python 3.11+
+- Node.js 18+ and npm
 - [uv](https://github.com/astral-sh/uv) package manager
 - Google Cloud Vertex AI ADC or Gemini API Key (`GOOGLE_API_KEY` in `.env`)
 - Docker & Docker Compose (for local container stack)
@@ -99,13 +112,18 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 git clone https://github.com/ameynarwadkar/runwise.git
 cd runwise
 
-# Install dependencies using uv
+# Install backend dependencies using uv
 uv sync
+
+# Install frontend dependencies
+cd frontend
+npm install
+cd ..
 ```
 
-### 4.3 Running the Full Test Suite
+### 4.3 Running the Full Backend Test Suite
 ```powershell
-# Run all 138 unit, integration, and operational tests
+# Run all 151 unit, integration, and demo API tests
 uv run pytest tests/ -v
 ```
 
@@ -113,6 +131,15 @@ uv run pytest tests/ -v
 ```powershell
 # Start FastAPI service with hot-reload
 uv run uvicorn runwise.service.app:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### 4.5 Starting the Frontend Website & Playground Locally
+```powershell
+cd frontend
+npm run dev
+```
+- **Portfolio Landing Page**: [http://localhost:3000](http://localhost:3000)
+- **Live Agent Playground**: [http://localhost:3000/demo](http://localhost:3000/demo)
 ```
 
 Verify health:
@@ -170,6 +197,9 @@ docker compose ps
 | [postmortems/001-canary-latency-slo-breach.md](postmortems/001-canary-latency-slo-breach.md) | Blameless postmortem of the Canary p95 Latency breach incident and recovery. |
 | [docs/CAPACITY_AND_COST.md](docs/CAPACITY_AND_COST.md) | Comprehensive capacity planning, token economics, and load-test benchmark data. |
 | [docs/BENCHMARK_REPORT.md](docs/BENCHMARK_REPORT.md) | Full 50-task evaluation benchmark report across Dev and Holdout splits. |
+| [docs/ROUTING_REPORT.md](docs/ROUTING_REPORT.md) | 4-Way auto-routing benchmark analysis, empirical trace replay, and cost evaluation. |
+| [docs/superpowers/specs/2026-10-18-runwise-public-website-design.md](docs/superpowers/specs/2026-10-18-runwise-public-website-design.md) | Approved Public Website & Live Playground Architecture & System Design Specification. |
+| [docs/superpowers/plans/2026-10-18-runwise-public-website.md](docs/superpowers/plans/2026-10-18-runwise-public-website.md) | Phased Implementation & Acceptance Testing Plan. |
 | [ops/prometheus/alerts.yml](ops/prometheus/alerts.yml) | Production Prometheus alerting rules (Error Budget Burn, Latency SLO, Gateway Failover). |
 | [ops/grafana/dashboard.json](ops/grafana/dashboard.json) | Provisioned Grafana dashboard definition with live SLO and Canary panels. |
 

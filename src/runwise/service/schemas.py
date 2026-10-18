@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
@@ -60,6 +61,10 @@ class AgentRunRequest(BaseModel):
         default=False,
         description="Whether to use the cost-aware AutoRouter to dynamically select between Flash and Pro based on prompt complexity.",
     )
+    mode: str = Field(
+        default="conversation",
+        description="Execution mode: 'scenario' (isolated sandbox + grading) or 'conversation' (multi-turn).",
+    )
 
 
     @field_validator("prompt")
@@ -71,9 +76,57 @@ class AgentRunRequest(BaseModel):
         return stripped
 
 
+class GraderStatusEnum(str, Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    NOT_EVALUATED = "NOT_EVALUATED"
+
+
+class GraderDetailSchema(BaseModel):
+    status: GraderStatusEnum = GraderStatusEnum.NOT_APPLICABLE
+    reason_code: str | None = None
+    message: str | None = None
+
+
+class EvaluationSummarySchema(BaseModel):
+    overall_status: GraderStatusEnum = GraderStatusEnum.NOT_EVALUATED
+    task_completion: GraderDetailSchema = Field(default_factory=GraderDetailSchema)
+    policy_compliance: GraderDetailSchema = Field(default_factory=GraderDetailSchema)
+    groundedness: GraderDetailSchema = Field(default_factory=GraderDetailSchema)
+    explanation: str = "Deterministic evaluation summary."
+
+
+class SanitizedToolCall(BaseModel):
+    id: str
+    tool_name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    status: str = Field(default="success", description="'success' or 'error'")
+    result_data: dict[str, Any] | None = None
+    error_message: str | None = None
+
+
+class SanitizedTimelineEvent(BaseModel):
+    seq: int
+    event_type: str = Field(
+        description="REQUEST_RECEIVED, ROUTING_DECISION, MODEL_INVOCATION, TOOL_EXECUTION, FINAL_RESPONSE, or EVALUATION"
+    )
+    timestamp_iso: str
+    summary: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScenarioRunRequest(BaseModel):
+    scenario_id: str = Field(
+        ...,
+        description="Server-controlled scenario identifier (e.g. scenario_order_lookup, scenario_address_update).",
+    )
+    auto_route: bool = Field(default=True, description="Whether to route dynamically via AutoRouter")
+
+
 class AgentRunResponse(BaseModel):
     """
-    Output payload returned from POST /v1/agent/run.
+    Output payload returned from POST /v1/agent/run and POST /v1/demo/scenarios/run.
     """
 
     session_id: str = Field(..., description="Active session identifier")
@@ -93,3 +146,28 @@ class AgentRunResponse(BaseModel):
     model: str = Field(..., description="LiteLLM model identifier used for generation")
     prompt_version: str = Field(default="v1.0", description="Version of the system prompt template applied")
     variant: str = Field(default="stable", description="Traffic routing variant ('stable' or 'canary')")
+    features_detected: list[str] = Field(
+        default_factory=list,
+        description="Regex or semantic features detected by auto-router",
+    )
+    cost_usd: float | None = Field(
+        default=None,
+        description="Calculated USD cost of token consumption",
+    )
+    is_replay: bool = Field(
+        default=False,
+        description="Server-controlled flag indicating empirical replay",
+    )
+    tool_calls: list[SanitizedToolCall] = Field(
+        default_factory=list,
+        description="Sanitized allowlisted tool call details",
+    )
+    events: list[SanitizedTimelineEvent] = Field(
+        default_factory=list,
+        description="Sanitized execution trace timeline events",
+    )
+    evaluation: EvaluationSummarySchema | None = Field(
+        default=None,
+        description="Deterministic 4-tier grader evaluation results",
+    )
+
