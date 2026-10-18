@@ -8,7 +8,7 @@ export const PROJECT_METADATA = {
   eyebrow: "AI Agent Reliability Infrastructure",
   headline: "Build agents you can actually trust.",
   subhead:
-    "Evaluate reliability. Observe every execution. Route intelligently to reduce cost without sacrificing correctness.",
+    "Production agent reliability with deterministic evaluations, sub-millisecond model routing, and instant rollback.",
   repoUrl: "https://github.com/ameynarwadkar/runwise",
   authorName: "Amey Narwadkar",
   linkedinUrl: "https://linkedin.com/in/ameynarwadkar",
