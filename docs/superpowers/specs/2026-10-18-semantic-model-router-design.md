@@ -17,10 +17,12 @@ While fast (< 0.5 ms), rule-based classification lacks semantic discernment:
 **Runwise Semantic Routing v2** introduces a trained, calibrated classification router that predicts the probability of Flash task success:
 $$\widehat{P}(\text{Flash Success} \mid \text{Request}, \text{Context})$$
 
-The operational objective is to minimize total inference cost subject to strict quality and security constraints:
+The operational objective is to minimize total inference cost subject to strict quality and security constraints evaluated directly against the production rule-based baseline:
 $$\min \mathbb{E}[\text{Total Inference Cost}]$$
-$$\text{subject to } P(\text{Task Success}) \ge q_{\min} \quad \text{and} \quad P(\text{Critical Policy Invariant Breach}) \le \epsilon_{\text{safe}}$$
+$$\text{subject to } P(\text{Task Success}) \ge q_{\min} = 0.90 \quad (\text{and } \ge P_{\text{RULE\_BASED}}(\text{Task Success}))$$
+$$\text{and } P(\text{Critical Policy Invariant Breach}) \le \epsilon_{\text{safe}} = 0.00 \quad (\text{zero-tolerance})$$
 
+The primary evaluation compares against the existing `RULE_BASED` baseline, not only `ALWAYS_PRO`.
 The serving architecture utilizes a **Decoupled ONNX Sentence Encoder + Calibrated Linear Classification Head** operating on CPU without GPU dependencies or PyTorch in the production API.
 
 ---
@@ -58,21 +60,24 @@ The serving architecture utilizes a **Decoupled ONNX Sentence Encoder + Calibrat
            (Routine / Proven)              (High Conditional Risk)
 ```
 
-### 2.1 Router Components
-1. **Stage 1 Fast Filter (Regex Guardrail):**
-   - Retains immediate fail-safe rules for explicit jailbreak patterns (`r"(?i)\b(ignore|override)\b.*?\b(instructions|system prompt)\b"`).
-   - High-liability financial edge cases (e.g., legal threats, chargebacks) trigger conservative fallback to Pro or security rejection.
-   - Clean, unambiguous status inquiries bypass semantic embedding if they match exact trivial patterns.
-2. **Stage 2 Semantic ONNX Classifier:**
-   - **Tokenizer:** Fast Hugging Face tokenizer (`all-MiniLM-L6-v2`) in Python.
-   - **Encoder:** Frozen ONNX export of `sentence-transformers/all-MiniLM-L6-v2` (`minilm_v6.onnx`).
-   - **Pooling & Normalization:** Mean-pooling over token embeddings with attention mask weighting, followed by L2-normalization producing unit vector $x \in \mathbb{R}^{384}$.
-   - **Classification Head:** Linear decision dot-product $z = w^T x + b$.
-   - **Calibrated Probability:** Evaluated raw logistic sigmoid vs calibrated probability $\widehat{P}$.
-3. **Execution Decision:**
-   - If $\widehat{P}(\text{Flash Success}) \ge \tau$, route to `vertex_ai/gemini-2.5-flash`.
-   - Else, route to `vertex_ai/gemini-2.5-pro`.
-   - If ONNX inference times out (> 25 ms) or throws an exception, fail open/safe to Stage 1 regex logic.
+### 2.1 Context-Aware Representation & Normalization
+To prevent train/serving distribution shifts, the exact same text normalization and context formatting is applied during training dataset generation, Colab embedding extraction, and live production inference:
+
+$$\text{NormalizedInput} = \texttt{f"Customer: \{customer\_id or 'Anonymous'\} | User Request: \{clean\_prompt\}"}$$
+
+- **Truncation & Context Bounds:** Inputs are tokenized with maximum length 512 tokens using right-truncation. Long multi-clause prompts and edge cases (e.g. empty prompts, whitespace-only, 2000+ character prompts) are explicitly handled:
+  - If prompt is empty after strip: score defaults to $0.0$ (Flash inquiry).
+  - If prompt exceeds 512 tokens: truncated gracefully without crashing.
+
+### 2.2 Routing Strategy Definitions
+The four benchmarked strategies represent distinct, strictly isolated operational policies:
+1. **`ALWAYS_PRO`:** Baseline frontier model. All traffic is routed directly to Gemini 2.5 Pro ($1.250 / $5.000 per 1M).
+2. **`RULE_BASED`:** Existing production regex router. Evaluates keyword patterns (`refund`, `chargeback`), multi-entity mentions, and character length penalties.
+3. **`SEMANTIC_ONNX`:** Pure learned semantic classifier. Completely bypasses regex rules and evaluates $P(\text{Flash Success} \mid \text{NormalizedInput}) \ge \tau$ directly. This isolates and benchmarks the pure predictive capability of the learned classifier head without heuristic scaffolding.
+4. **`SEMANTIC_CASCADE`:** Two-stage hybrid router.
+   - **Stage 1 (Fast Guardrail):** Immediate regex fail-safe for severe adversarial prompt injection (routes to security refusal / Pro) and immediate bypass for trivial clean greetings.
+   - **Stage 2 (Semantic Classifier):** Normal queries pass to the ONNX semantic classifier ($P \ge \tau$).
+   - **Resilience Fallback:** If ONNX inference times out (> 25 ms) or throws an exception, falls back to `RULE_BASED` logic.
 
 ---
 
@@ -186,11 +191,15 @@ Before building or scaling the full 350-scenario dataset, an initial pilot of **
   - **Estimated Application Budget Target:** **$\$0.50$ USD**.
 - **HARD GATE:** No script shall initiate paid inference without explicit user confirmation of the test task list and budget target.
 
-### 4.3 Informative Disagreement Gate
-Before scaling the dataset to 350+ scenarios:
+### 4.3 Informative Disagreement & Diagnostic Gate
+The 30-scenario pilot and the 10% disagreement threshold are **diagnostic pipeline validation gates**, not statistical proof of a learnable decision boundary:
 - Calculate Disagreement Rate:
   $$D = \frac{N(\text{FAIL/PASS}) + N(\text{PASS/FAIL})}{N_{\text{valid}}}$$
-- If $D < 10\%$ (i.e. Flash passes nearly everything or both models pass identically), **STOP**. Do not scale to 350 scenarios on trivial tasks. Expand challenging distributions (complex multi-order dependencies, subtle policy violations, and ambiguous negation) before generating more data.
+- The pilot report must record:
+  - Exact count and distribution of outcomes across `PASS/PASS`, `FAIL/PASS`, `PASS/FAIL`, and `FAIL/FAIL`.
+  - Concrete statistical limitations and confidence intervals given the small sample size ($N=30$).
+  - Grader validity checks confirming assertions tested what was requested.
+- **Diagnostic Gate:** If $D < 10\%$ (fewer than 3 disagreements out of 30), **HALT**. This indicates the sampled tasks do not discriminate between model tiers; we must expand challenging task families (multi-condition mutations, subtle policy constraints, and nested entity lookups) before scaling to 350 scenarios.
 
 ---
 
@@ -226,10 +235,12 @@ model_onnx/
 └── manifest.json              # Artifact SHA-256 hashes, creation timestamp, training git hash
 ```
 
-### 5.3 Numerical Parity & Parity Check
-Before integration into Runwise, a validation script verifies that:
-$$\max | \widehat{P}_{\text{ONNX}}(\text{Prompt}_i) - \widehat{P}_{\text{PyTorch}}(\text{Prompt}_i) | \le 10^{-5}$$
-across 50 benchmark prompts.
+### 5.3 Acceptance Criteria Separation: Correctness vs Optimization
+To prevent conflating model integrity with latency tuning:
+1. **Model Correctness Gate (Hard Blocker):** Numerical parity between PyTorch and ONNX Runtime is mandatory:
+   $$\max_i | \widehat{P}_{\text{ONNX}}(\text{Prompt}_i) - \widehat{P}_{\text{PyTorch}}(\text{Prompt}_i) | \le 10^{-5}$$
+   Any deviation $> 10^{-5}$ blocks deployment until pooling, normalization, or float precision mismatches are resolved.
+2. **Latency Optimization Target (Non-Blocking Goal):** The target router latency is $\le 15$ ms at p95 on CPU. Latency exceeding 15 ms triggers profiling and optimization tasks (e.g. INT8 quantization or prompt truncation), but does not block experimental integration or offline benchmarking.
 
 ---
 
@@ -239,12 +250,13 @@ across 50 benchmark prompts.
 In [`src/runwise/service/auto_router.py`](file:///e:/Coding/production-level-agent/src/runwise/service/auto_router.py):
 - Keep existing rule-based `AutoRouter` as the production default.
 - Introduce `RouterStrategy` enum:
-  - `RULE_BASED` (Default regex router)
-  - `SEMANTIC_ONNX` (Feature-flagged Stage 1 + Stage 2 ONNX classifier)
+  - `RULE_BASED` (Default production regex router)
+  - `SEMANTIC_ONNX` (Pure learned classifier without regex heuristics)
+  - `SEMANTIC_CASCADE` (Two-stage router: Stage 1 fast regex guardrails + Stage 2 ONNX classifier)
   - `ALWAYS_FLASH` (Baseline for cost comparison)
   - `ALWAYS_PRO` (Baseline for quality comparison)
 - Configured via environment variable `RUNWISE_ROUTER_STRATEGY=rule_based`.
-- Dynamic strategy and threshold overrides are **restricted strictly to internal, authenticated test calls** (e.g. via internal test headers or authenticated admin endpoint); public API traffic cannot manipulate routing decisions.
+- Dynamic strategy and threshold overrides are **restricted strictly to internal, authenticated test calls**; public API traffic cannot manipulate routing decisions.
 
 ### 6.2 CPU Latency Benchmarking
 Do not assume 4–8 ms CPU inference without evidence. Implement a dedicated benchmark script executing 500 warmup runs and 1,000 timed inferences on the target host environment, logging:
