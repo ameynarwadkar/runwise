@@ -16,6 +16,7 @@ export default function DemoPage() {
   const [runData, setRunData] = useState<AgentRunResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isReplay, setIsReplay] = useState(false);
+  const [manualReplayMode, setManualReplayMode] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [activeScenarioPrompt, setActiveScenarioPrompt] = useState<string>("");
@@ -73,12 +74,15 @@ export default function DemoPage() {
     setActiveScenarioId(null);
     setActiveScenarioPrompt("");
     setIsReplay(false);
+    setManualReplayMode(false);
   };
 
   // Toggle Replay Mode
   const handleToggleReplayMode = () => {
-    if (!isReplay) {
-      const replay = getReplay("task_inq_01");
+    const nextMode = !manualReplayMode;
+    setManualReplayMode(nextMode);
+    if (nextMode) {
+      const replay = getReplay(activeScenarioId ? PREDEFINED_SCENARIOS.find(s => s.id === activeScenarioId)?.task_id || "task_inq_01" : "task_inq_01");
       if (replay) {
         setRunData(replay);
         setIsReplay(true);
@@ -93,7 +97,7 @@ export default function DemoPage() {
     setActiveScenarioId(scenario.id);
     setActiveScenarioPrompt(scenario.prompt);
 
-    if (isReplay || isOffline) {
+    if (manualReplayMode || isOffline) {
       // In replay or offline mode, instantly load the verified replay artifact
       const replay = getReplay(scenario.task_id);
       if (replay) {
@@ -139,7 +143,7 @@ export default function DemoPage() {
 
       const result = await executeScenario(scenario.id, true);
       setRunData(result);
-      if (result.is_replay) setIsReplay(true);
+      setIsReplay(Boolean(result.is_replay));
 
       const assistantMsg: ChatMessage = {
         id: `ast_${Date.now()}`,
@@ -246,7 +250,10 @@ export default function DemoPage() {
             </span>
           </div>
           <button
-            onClick={() => setIsReplay(false)}
+            onClick={() => {
+              setIsReplay(false);
+              setManualReplayMode(false);
+            }}
             className="text-[11px] underline font-mono text-amber-200 hover:text-white"
           >
             Switch to Live Mode
