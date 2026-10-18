@@ -7,13 +7,17 @@ from __future__ import annotations
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
+from runwise.evals.models import DBAssertion, Task, TaskExpected
+
 
 class ProvenanceRecord(BaseModel):
-    """Source provenance tracking for adapted datasets."""
+    """Source provenance tracking for public or authored datasets."""
     source_dataset: str
     source_row_id: str
+    upstream_license: str
     original_text: str
     adaptation_strategy: str
+    is_authored_template: bool = False
 
 
 class AssertionQuery(BaseModel):
@@ -31,6 +35,8 @@ class ExpectedBehavior(BaseModel):
     forbidden_tools: list[str] = Field(default_factory=list)
     must_authenticate: bool = False
     expected_refusal: bool = False
+    auth_before_mutation: bool = True
+    grounded_response_keywords: list[str] = Field(default_factory=list)
 
 
 class ScenarioPayload(BaseModel):
@@ -75,3 +81,32 @@ class PairedScenario(BaseModel):
     scenario: ScenarioPayload
     expected: ExpectedBehavior
     paired_eval: PairedEvaluationOutcome = Field(default_factory=PairedEvaluationOutcome)
+
+    def to_eval_task(self) -> Task:
+        """Translates PairedScenario into a native Runwise Task for standard tiered grading."""
+        db_assertions = [
+            DBAssertion(
+                query=a.query,
+                expected_value=a.expected_value,
+                operator=a.operator,
+                rationale=a.rationale,
+            )
+            for a in self.expected.db_state_assertions
+        ]
+        return Task(
+            id=self.task_id,
+            split=self.split,
+            category=self.category,
+            difficulty=self.difficulty,
+            user_prompt=self.scenario.user_prompt,
+            customer_id=self.scenario.customer_id,
+            injected_clock_iso=self.scenario.injected_clock_iso,
+            expected=TaskExpected(
+                db_state_assertions=db_assertions,
+                required_tools=self.expected.required_tools,
+                forbidden_tools=self.expected.forbidden_tools,
+                must_authenticate=self.expected.must_authenticate,
+                expected_refusal=self.expected.expected_refusal,
+                requires_judge=False,
+            ),
+        )

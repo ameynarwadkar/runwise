@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from runwise.evals.assertion_validator import build_structured_assertion
 from runwise.evals.routing_schema import (
-    AssertionQuery,
     ExpectedBehavior,
     PairedScenario,
     ProvenanceRecord,
@@ -16,26 +16,38 @@ from runwise.evals.routing_schema import (
 )
 
 
-def adapt_taubench_episode(episode: dict[str, Any], index: int, split: str = "pilot") -> PairedScenario:
+def adapt_taubench_episode(
+    episode: dict[str, Any],
+    index: int,
+    split: str = "pilot",
+    family_suffix: str = "",
+) -> PairedScenario:
     raw_prompt = episode.get("prompt", "")
     cid = episode.get("customer_id", "CUST-002")
     code = episode.get("verification_code", "1234")
 
     prompt = f"{raw_prompt} Customer ID: {cid}, code: {code}."
-    family_id = f"fam_tau_cond_{index // 5:03d}"
+    fam_tag = family_suffix or f"{index:03d}"
+    family_id = f"fam_tau_cond_{fam_tag}"
 
-    # Verifies that conditional refund on ORD-103 occurs while ORD-104 remains untouched
+    # Verifies conditional refund on ORD-103 occurred while ORD-104 is completely unmutated
     assertions = [
-        AssertionQuery(
-            query="SELECT COALESCE(SUM(amount_cents), 0) FROM refunds WHERE order_id = 'ORD-103'",
+        build_structured_assertion(
+            table="refunds",
+            column="amount_cents",
+            filter_column="order_id",
+            filter_value="ORD-103",
             expected_value=2000,
-            operator="equals",
-            rationale="ORD-103 eligible balance refund of 2000 cents must be recorded",
+            aggregate="SUM_COALESCE",
+            rationale="ORD-103 delivered balance refund of 2000 cents must be recorded",
         ),
-        AssertionQuery(
-            query="SELECT COUNT(*) FROM refunds WHERE order_id = 'ORD-104'",
+        build_structured_assertion(
+            table="refunds",
+            column="*",
+            filter_column="order_id",
+            filter_value="ORD-104",
             expected_value=0,
-            operator="equals",
+            aggregate="COUNT",
             rationale="ORD-104 must not be refunded due to condition or policy exclusion",
         ),
     ]
@@ -46,8 +58,10 @@ def adapt_taubench_episode(episode: dict[str, Any], index: int, split: str = "pi
         provenance=ProvenanceRecord(
             source_dataset="galileo-ai/agent-leaderboard",
             source_row_id=f"episode_{index}",
+            upstream_license="Apache-2.0 / MIT",
             original_text=raw_prompt,
             adaptation_strategy="conditional_mutation_asserted",
+            is_authored_template=False,
         ),
         split=split,
         category="conditional_mutation",

@@ -26,24 +26,33 @@ def test_generate_30_scenario_pilot_creates_exact_distribution() -> None:
     task_ids = [s.task_id for s in scenarios]
     assert len(task_ids) == len(set(task_ids)), "Task IDs must be globally unique"
 
+    # Verify 15-20 distinct family IDs
+    family_ids = {s.family_id for s in scenarios}
+    assert 15 <= len(family_ids) <= 20, f"Expected 15-20 distinct task families, found {len(family_ids)}"
+
     # Verify category distribution
     categories = {s.category for s in scenarios}
     assert "inquiry" in categories
     assert "cancellation" in categories
     assert "financial_dispute" in categories
     assert "conditional_mutation" in categories
+    assert "authentication_challenge" in categories
+    assert "refund_ineligible" in categories
+    assert "ambiguous_inquiry" in categories
+    assert "adversarial" in categories
 
-    # Verify family ID grouping exists on every scenario
+    # Verify provenance license is set on every scenario
     for s in scenarios:
-        assert s.family_id is not None and len(s.family_id) > 0
+        assert s.provenance.upstream_license is not None
+        assert len(s.provenance.upstream_license) > 0
 
 
 def test_check_contamination_and_near_duplicates_guards_against_leakage() -> None:
     scenarios = generate_30_scenario_pilot()
     
-    # 1. Pilot scenarios must not contain holdout tasks
+    # 1. Clean check on pilot scenarios
     is_clean, issues = check_contamination_and_near_duplicates(scenarios)
-    assert is_clean is True
+    assert is_clean is True, f"Pilot scenarios contain contamination: {issues}"
     assert len(issues) == 0
 
     # 2. Synthetic leak injection test: duplicate family or identical prompt text
@@ -56,14 +65,16 @@ def test_check_contamination_and_near_duplicates_guards_against_leakage() -> Non
     )
     duplicate_scenario = PairedScenario(
         task_id="rw_leak_test",
-        family_id=scenarios[0].family_id, # Reusing family_id in separate split!
+        family_id=scenarios[0].family_id,
         provenance=ProvenanceRecord(
             source_dataset="test",
             source_row_id="1",
-            original_text=scenarios[0].scenario.user_prompt, # Identical prompt!
+            upstream_license="test",
+            original_text=scenarios[0].scenario.user_prompt,
             adaptation_strategy="leak",
+            is_authored_template=False,
         ),
-        split="test",
+        split="test",  # Different split with same family_id!
         category="inquiry",
         difficulty="easy",
         scenario=ScenarioPayload(user_prompt=scenarios[0].scenario.user_prompt),
