@@ -112,6 +112,7 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: string;
+  runData?: AgentRunResponse;
   metadata?: {
     model?: string;
     tokens?: TokenUsage;
@@ -119,5 +120,6 @@ export interface ChatMessage {
     cost_usd?: number;
     is_replay?: boolean;
     complexity_score?: number | null;
+    eval_verdict?: GraderStatus;
   };
 }

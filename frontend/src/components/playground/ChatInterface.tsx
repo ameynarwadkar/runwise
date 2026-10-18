@@ -1,12 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Zap, Bot, User, AlertTriangle, ShieldCheck, Loader2 } from "lucide-react";
+import {
+  ArrowUp,
+  Bot,
+  User,
+  CheckCircle2,
+  XCircle,
+  History,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import { ChatMessage } from "@/lib/types";
+import { ExecutionExplainer } from "./ExecutionExplainer";
 
 interface ChatInterfaceProps {
   messages: ChatMessage[];
-  onSendMessage: (prompt: string, autoRoute: boolean) => Promise<void>;
+  onSendMessage: (prompt: string) => Promise<void>;
   isLoading: boolean;
   activeScenarioPrompt?: string;
   onClearActiveScenarioPrompt?: () => void;
@@ -20,8 +32,8 @@ export function ChatInterface({
   onClearActiveScenarioPrompt,
 }: ChatInterfaceProps) {
   const [prompt, setPrompt] = useState("");
-  const [autoRoute, setAutoRoute] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (activeScenarioPrompt) {
@@ -29,6 +41,8 @@ export function ChatInterface({
       if (onClearActiveScenarioPrompt) {
         onClearActiveScenarioPrompt();
       }
+      // Focus textarea
+      textareaRef.current?.focus();
     }
   }, [activeScenarioPrompt, onClearActiveScenarioPrompt]);
 
@@ -36,155 +50,226 @@ export function ChatInterface({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!prompt.trim() || isLoading) return;
     const currentPrompt = prompt;
     setPrompt("");
-    await onSendMessage(currentPrompt, autoRoute);
+    await onSendMessage(currentPrompt);
   };
 
   return (
-    <div className="flex flex-col h-[650px] rounded-xl border border-surface-border bg-charcoal overflow-hidden shadow-xl">
-      {/* Demo Credentials Notice Banner */}
-      <div className="bg-surface/90 border-b border-surface-border px-4 py-2 text-[11px] text-slate-400 flex items-center gap-2">
-        <ShieldCheck className="h-3.5 w-3.5 text-brand-orange shrink-0" />
-        <span>
-          <strong className="text-slate-300">Sandbox Notice:</strong> Verification codes (e.g. 1234) are demo tokens testing authorization-before-action policy. Not production auth.
-        </span>
-      </div>
-
+    <div className="flex flex-col flex-1 w-full max-w-3xl mx-auto">
       {/* Messages Stream */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+      <div className="flex-1 space-y-6 pb-6">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
-            <Bot className="h-10 w-10 text-slate-600 mb-3" />
-            <p className="text-sm font-medium text-slate-300">
-              Select a scenario above or type a customer inquiry.
-            </p>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm">
-              The AutoRouter will dynamically inspect request complexity and select between Gemini 2.5 Flash and Pro.
+          <div className="py-16 sm:py-24 text-center">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-surface border border-surface-border text-brand-orange mb-4 shadow-sm">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              Runwise Live Playground
+            </h2>
+            <p className="mt-2 text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
+              Test production agent reliability with sub-millisecond model routing, deterministic evaluations, and sandboxed database actions.
             </p>
           </div>
         ) : (
           messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 text-xs leading-relaxed ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              {msg.role === "assistant" && (
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface border border-surface-border text-brand-orange">
-                  <Bot className="h-4 w-4" />
-                </div>
-              )}
-
-              <div
-                className={`max-w-[85%] rounded-xl p-3.5 ${
-                  msg.role === "user"
-                    ? "bg-brand-orange text-white"
-                    : "bg-surface border border-surface-border text-slate-200"
-                }`}
-              >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-
-                {/* Metadata Strip for Assistant Messages */}
-                {msg.role === "assistant" && msg.metadata && (
-                  <div className="mt-2.5 pt-2 border-t border-surface-border/60 flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-400">
-                    {msg.metadata.model && (
-                      <span className="text-brand-orange">
-                        {msg.metadata.model.replace("vertex_ai/", "")}
-                      </span>
-                    )}
-                    {msg.metadata.latency_ms && (
-                      <span>{(msg.metadata.latency_ms / 1000).toFixed(2)}s</span>
-                    )}
-                    {msg.metadata.tokens && (
-                      <span>{msg.metadata.tokens.total_tokens} tokens</span>
-                    )}
-                    {msg.metadata.cost_usd !== undefined && msg.metadata.cost_usd !== null && (
-                      <span className="text-emerald-400">
-                        ${msg.metadata.cost_usd < 0.0001 ? "<$0.0001" : msg.metadata.cost_usd.toFixed(4)}
-                      </span>
-                    )}
-                    {msg.metadata.is_replay && (
-                      <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                        REPLAY
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {msg.role === "user" && (
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface border border-surface-border text-slate-300">
-                  <User className="h-4 w-4" />
-                </div>
+            <div key={msg.id}>
+              {msg.role === "user" ? (
+                <UserMessageItem content={msg.content} />
+              ) : (
+                <AssistantMessageItem msg={msg} />
               )}
             </div>
           ))
         )}
 
         {isLoading && (
-          <div className="flex gap-3 text-xs leading-relaxed justify-start">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface border border-surface-border text-brand-orange animate-pulse">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface border border-surface-border text-brand-orange shadow-sm animate-pulse">
               <Bot className="h-4 w-4" />
             </div>
-            <div className="rounded-xl p-3.5 bg-surface border border-surface-border text-slate-400 flex items-center gap-2 font-mono">
+            <div className="rounded-2xl px-4 py-3 bg-surface border border-surface-border text-slate-300 text-xs font-mono flex items-center gap-2.5">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-orange" />
-              <span>Executing AutoRouter &amp; Agent Loop...</span>
+              <span>Routing model &amp; executing sandboxed agent loop...</span>
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Bar Form */}
-      <form onSubmit={handleSubmit} className="p-3 sm:p-4 border-t border-surface-border bg-charcoal-subtle">
-        <div className="flex items-center justify-between mb-2 text-[11px] text-slate-400 font-mono">
-          <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-200 transition-colors">
-            <input
-              type="checkbox"
-              checked={autoRoute}
-              onChange={(e) => setAutoRoute(e.target.checked)}
-              className="rounded border-slate-700 bg-surface text-brand-orange focus:ring-0 focus:ring-offset-0"
+      {/* ChatGPT-style Centered Input Container */}
+      <div className="sticky bottom-4 w-full pt-2">
+        <form
+          onSubmit={handleSubmit}
+          className="relative rounded-2xl border border-surface-border bg-charcoal/95 backdrop-blur-md shadow-2xl p-2 sm:p-2.5 focus-within:border-brand-orange/60 focus-within:ring-1 focus-within:ring-brand-orange/40 transition-all"
+        >
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Ask Runwise anything or pick an example above..."
+              rows={1}
+              className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none resize-none max-h-36 font-sans leading-relaxed"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
             />
-            <span>Auto-Routing (Flash vs Pro)</span>
-          </label>
-          <span>{prompt.length}/1000 chars</span>
+
+            <button
+              type="submit"
+              disabled={!prompt.trim() || isLoading}
+              className="h-9 w-9 rounded-xl bg-brand-orange text-white flex items-center justify-center hover:bg-brand-orangeHover transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-brand-orange/20 shrink-0 active:scale-95"
+              title="Send message"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+              )}
+            </button>
+          </div>
+        </form>
+
+        <p className="mt-2 text-center text-[11px] text-slate-400">
+          Runwise verifies agent actions deterministically against sandboxed SQLite databases.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * User Message Bubble
+ */
+function UserMessageItem({ content }: { content: string }) {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] rounded-2xl bg-surface border border-surface-border px-4 py-3 text-sm text-slate-100 whitespace-pre-wrap leading-relaxed shadow-sm">
+        {content}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Assistant Message with Simplified Chips & Collapsible "How Runwise handled this"
+ */
+function AssistantMessageItem({ msg }: { msg: ChatMessage }) {
+  const [showExplainer, setShowExplainer] = useState(false);
+
+  // Model Display Name (Gemini Flash vs Gemini Pro)
+  const rawModel = msg.metadata?.model || msg.runData?.model || "";
+  const isPro = rawModel.toLowerCase().includes("pro");
+  const modelLabel = rawModel ? (isPro ? "Gemini Pro" : "Gemini Flash") : null;
+
+  // Latency (e.g. 1.8s)
+  const latencyMs = msg.metadata?.latency_ms ?? msg.runData?.latency_ms;
+  const latencyLabel = latencyMs !== undefined ? `${(latencyMs / 1000).toFixed(1)}s` : null;
+
+  // Evaluation status (ONLY when backed by actual grader results)
+  const evalStatus =
+    msg.metadata?.eval_verdict ||
+    msg.runData?.evaluation?.overall_status ||
+    null;
+  const isEvaluated = evalStatus === "PASS" || evalStatus === "FAIL";
+
+  const isReplay = msg.metadata?.is_replay || msg.runData?.is_replay;
+
+  return (
+    <div className="flex items-start gap-3.5">
+      {/* Bot Icon */}
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surface border border-surface-border text-brand-orange shadow-sm mt-0.5">
+        <Bot className="h-4 w-4" />
+      </div>
+
+      <div className="flex-1 max-w-[92%]">
+        {/* Assistant Response Bubble */}
+        <div className="rounded-2xl bg-surface border border-surface-border px-4 py-3.5 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed shadow-sm">
+          {msg.content}
         </div>
 
-        <div className="flex gap-2">
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value.slice(0, 1000))}
-            placeholder="Type customer query or load a scenario above..."
-            rows={2}
-            className="flex-1 rounded-lg bg-surface border border-surface-border px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-orange/60 resize-none font-sans"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit(e);
-              }
-            }}
-          />
+        {/* Simplified Execution Feedback Strip */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {/* Selected Model Chip */}
+          {modelLabel && (
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-xs font-medium font-mono border ${
+                isPro
+                  ? "bg-purple-500/10 text-brand-purple border-purple-500/25"
+                  : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
+              }`}
+            >
+              {modelLabel}
+            </span>
+          )}
+
+          {/* Latency Chip */}
+          {latencyLabel && (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono text-slate-300 bg-surface border border-surface-border">
+              {latencyLabel}
+            </span>
+          )}
+
+          {/* Evaluation Status Chip (only when backed by actual grader results!) */}
+          {isEvaluated && (
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-xs font-medium border flex items-center gap-1 ${
+                evalStatus === "PASS"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
+                  : "bg-red-500/10 text-red-400 border-red-500/25"
+              }`}
+            >
+              {evalStatus === "PASS" ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span>Evaluated: Passed</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-3 w-3" />
+                  <span>Evaluated: Failed</span>
+                </>
+              )}
+            </span>
+          )}
+
+          {/* Recorded Demo Chip */}
+          {isReplay && (
+            <span
+              className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/25 flex items-center gap-1 cursor-help"
+              title="Previously captured, verified execution trace from the benchmark suite"
+            >
+              <History className="h-3 w-3" />
+              <span>Recorded Demo</span>
+            </span>
+          )}
+
+          {/* Collapsible Explainer Trigger: "How Runwise handled this" */}
           <button
-            type="submit"
-            disabled={!prompt.trim() || isLoading}
-            className="self-end px-4 py-2.5 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-brand-orangeHover transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-sm active:scale-95"
+            onClick={() => setShowExplainer((prev) => !prev)}
+            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium text-slate-400 hover:text-white hover:bg-surface border border-transparent hover:border-surface-border transition-all ml-auto"
           >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+            <span>How Runwise handled this</span>
+            {showExplainer ? (
+              <ChevronUp className="h-3 w-3 text-brand-orange" />
             ) : (
-              <>
-                <span>Run</span>
-                <Send className="h-3.5 w-3.5" />
-              </>
+              <ChevronDown className="h-3 w-3 text-brand-orange" />
             )}
           </button>
         </div>
-      </form>
+
+        {/* Collapsible Execution Explainer */}
+        {showExplainer && (
+          <ExecutionExplainer runData={msg.runData} />
+        )}
+      </div>
     </div>
   );
 }

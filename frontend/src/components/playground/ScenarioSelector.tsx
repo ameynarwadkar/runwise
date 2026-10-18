@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { PREDEFINED_SCENARIOS } from "@/lib/constants";
 import { ScenarioDefinition } from "@/lib/types";
-import { Zap, ShieldCheck, CornerDownRight } from "lucide-react";
+import { Sparkles, ChevronDown, Package, MapPin, RefreshCw, ShieldAlert, Layers } from "lucide-react";
 
 interface ScenarioSelectorProps {
   activeScenarioId: string | null;
@@ -15,61 +16,102 @@ export function ScenarioSelector({
   onSelectScenario,
   disabled,
 }: ScenarioSelectorProps) {
-  return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-2.5">
-        <span className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-400">
-          Pre-Seeded Ground-Truth Scenarios
-        </span>
-        <span className="text-[11px] font-mono text-slate-400">
-          Evaluated via Tiers 1–3
-        </span>
-      </div>
+  const [showMore, setShowMore] = useState(false);
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5">
-        {PREDEFINED_SCENARIOS.map((scenario) => {
+  // Map to the 4 requested primary compact examples
+  const orderLookup = PREDEFINED_SCENARIOS.find((s) => s.id === "scenario_order_lookup");
+  const addressUpdate = PREDEFINED_SCENARIOS.find((s) => s.id === "scenario_address_update");
+  const refundRequest = PREDEFINED_SCENARIOS.find((s) => s.id === "scenario_refund_request");
+  const testSafety = PREDEFINED_SCENARIOS.find((s) => s.id === "scenario_adversarial_injection");
+  const multiDispute = PREDEFINED_SCENARIOS.find((s) => s.id === "scenario_multi_order_dispute");
+
+  const primaryExamples = [
+    {
+      scenario: orderLookup,
+      label: "Track an order",
+      icon: Package,
+    },
+    {
+      scenario: addressUpdate,
+      label: "Change an address",
+      icon: MapPin,
+    },
+    {
+      scenario: refundRequest,
+      label: "Request a refund",
+      icon: RefreshCw,
+    },
+    {
+      scenario: testSafety,
+      label: "Test safety",
+      icon: ShieldAlert,
+    },
+  ].filter((item): item is { scenario: ScenarioDefinition; label: string; icon: typeof Package } => Boolean(item.scenario));
+
+  return (
+    <div className="w-full mb-6">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <span className="text-xs text-slate-400 font-medium mr-1 hidden sm:inline">
+          Try an example:
+        </span>
+
+        {primaryExamples.map(({ scenario, label, icon: Icon }) => {
           const isSelected = activeScenarioId === scenario.id;
           return (
             <button
               key={scenario.id}
               disabled={disabled}
               onClick={() => onSelectScenario(scenario)}
-              className={`rounded-lg p-3 text-left border transition-all flex flex-col justify-between ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all active:scale-95 ${
                 isSelected
-                  ? "bg-surface-active border-brand-orange/60 shadow-[0_0_10px_rgba(249,115,22,0.12)]"
-                  : "bg-surface border-surface-border hover:border-slate-700 hover:bg-surface-hover"
-              } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+                  ? "bg-brand-orange text-white border-brand-orange shadow-md shadow-brand-orange/20"
+                  : "bg-surface border-surface-border text-slate-200 hover:border-brand-orange/40 hover:bg-surface-hover"
+              } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              <div>
-                <div className="flex items-center justify-between gap-1 mb-1.5">
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-medium ${
-                      scenario.expected_tier === "flash"
-                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        : "bg-purple-500/10 text-brand-purple border border-purple-500/20"
-                    }`}
-                  >
-                    {scenario.badge}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {scenario.task_id}
-                  </span>
-                </div>
-                <div className="text-xs font-bold text-white leading-snug">
-                  {scenario.title}
-                </div>
-                <p className="mt-1 text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
-                  {scenario.description}
-                </p>
-              </div>
-
-              <div className="mt-2.5 pt-2 border-t border-surface-border/50 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                <span>Load Scenario</span>
-                <CornerDownRight className="h-3 w-3 text-brand-orange" />
-              </div>
+              <Icon className="h-3.5 w-3.5 opacity-80" />
+              <span>{label}</span>
             </button>
           );
         })}
+
+        {/* More Examples Dropdown / Toggle */}
+        {multiDispute && (
+          <div className="relative">
+            <button
+              disabled={disabled}
+              onClick={() => setShowMore((prev) => !prev)}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                activeScenarioId === multiDispute.id
+                  ? "bg-brand-orange text-white border-brand-orange"
+                  : "bg-surface border-surface-border text-slate-300 hover:text-white hover:border-slate-600"
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5 text-slate-400" />
+              <span>More examples</span>
+              <ChevronDown className={`h-3 w-3 transition-transform ${showMore ? "rotate-180" : ""}`} />
+            </button>
+
+            {showMore && (
+              <div className="absolute right-0 sm:left-0 mt-2 w-56 rounded-xl bg-surface border border-surface-border shadow-2xl p-1 z-30 animate-in fade-in zoom-in-95">
+                <button
+                  onClick={() => {
+                    onSelectScenario(multiDispute);
+                    setShowMore(false);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-200 hover:bg-surface-hover hover:text-white flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-brand-orange" />
+                    <span>Multi-order dispute</span>
+                  </div>
+                  {activeScenarioId === multiDispute.id && (
+                    <span className="text-[10px] text-brand-orange font-mono">Active</span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
