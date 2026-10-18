@@ -10,3 +10,7 @@ build/
 results/eval_runs/*.jsonl
 .pytest_cache/
 results/runs
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/

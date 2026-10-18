@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #101114;
+  --foreground: #F3F4F6;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar for dark tech aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #101114;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #232730;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #323846;
+}
+
+/* Subtle grid background utility */
+.tech-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(35, 39, 48, 0.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(35, 39, 48, 0.35) 1px, transparent 1px);
+}
+
+.tech-grid-dots {
+  background-size: 24px 24px;
+  background-image: radial-gradient(rgba(249, 115, 22, 0.15) 1px, transparent 1px);
+}
