@@ -289,7 +289,15 @@ def evaluate_canonical_dev_suite(
     if hasattr(eval_model, "gradient_checkpointing_disable"):
         eval_model.gradient_checkpointing_disable()
 
-    context_manager = eval_model.disable_adapter() if disable_adapter else torch.no_grad()
+    if disable_adapter:
+        if hasattr(eval_model, "disable_adapter"):
+            context_manager = eval_model.disable_adapter()
+        elif hasattr(eval_model, "disable_adapters"):
+            context_manager = eval_model.disable_adapters()
+        else:
+            context_manager = torch.no_grad()
+    else:
+        context_manager = torch.no_grad()
 
     trial_results = []
     e2e_pass_count = 0
