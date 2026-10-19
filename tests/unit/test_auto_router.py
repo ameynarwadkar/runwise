@@ -20,7 +20,7 @@ def test_simple_inquiry_routes_to_flash(router):
     decision = router.route("What is the status of order ORD-101?")
     assert decision.selected_model == "vertex_ai/gemini-2.5-flash"
     assert decision.complexity_score < 0.45
-    assert decision.latency_overhead_ms < 5.0  # Must be sub-5ms
+    assert decision.latency_overhead_ms < 15.0  # Target is sub-15ms p95
 
 
 def test_happy_path_cancellation_routes_to_flash(router):

@@ -123,6 +123,19 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_orders",
+            "description": "List all order summaries for the authenticated customer. Requires customer authentication.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "string", "description": "Optional customer ID. Must match the authenticated customer ID."},
+                },
+            },
+        },
+    },
 ]
 
 
@@ -134,6 +147,7 @@ _DISPATCH_TABLE = {
     "lookup_user": tools.lookup_user,
     "verify_customer": tools.verify_customer,
     "lookup_order": tools.lookup_order,
+    "list_orders": tools.list_orders,
     "update_shipping_address": tools.update_shipping_address,
     "cancel_order": tools.cancel_order,
     "issue_refund": tools.issue_refund,

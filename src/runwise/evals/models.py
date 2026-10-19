@@ -41,6 +41,17 @@ class DBAssertion(BaseModel):
     rationale: str = ""
 
 
+class MultiDimensionalVerdict(BaseModel):
+    """Granular multi-dimensional evaluation results separating action, policy, facts, and explanation."""
+    task_completion: bool = False
+    policy_compliance: bool = False
+    factual_correctness: bool = False
+    explanation_quality: bool = False
+    overall_pass: bool = False
+    failure_reasons: list[str] = Field(default_factory=list)
+    dimension_details: dict[str, Any] = Field(default_factory=dict)
+
+
 class TaskExpected(BaseModel):
     """Expected outcomes and constraints for a task."""
     db_state_assertions: list[DBAssertion] = Field(default_factory=list)
@@ -49,6 +60,13 @@ class TaskExpected(BaseModel):
     must_authenticate: bool = False
     expected_refusal: bool = False
     requires_judge: bool = False
+    expected_tool_order: list[str] = Field(default_factory=list)
+    allowed_tool_paths: list[list[str]] = Field(default_factory=list)
+    factual_patterns: list[str] = Field(default_factory=list)
+    explanation_patterns: list[str] = Field(default_factory=list)
+    refusal_patterns: list[str] = Field(default_factory=list)
+    grounded_response_keywords: list[str] = Field(default_factory=list)
+    auth_before_mutation: bool = True
 
 
 class Task(BaseModel):

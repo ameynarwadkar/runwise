@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from runwise.domain.model import SessionContext, ToolResult
+from runwise.domain.authorization import ActionStatus, PendingAction
 
 # Standard path to versioned policy document
 POLICY_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "policies" / "v1.0.md"
@@ -97,6 +98,14 @@ def lookup_user(
 ) -> ToolResult:
     """
     Look up customer profile. Read-only. Does NOT authenticate the session.
+
+    Privacy & Access Rules:
+    - If authenticated:
+      - Can only query the authenticated user's own profile.
+      - Cross-user queries are strictly denied with ACCESS_DENIED.
+    - If unauthenticated:
+      - Unrestricted profile enumeration is prohibited.
+      - Queries return public identity data with email address masked.
     """
     if not user_id and not email:
         return ToolResult(
@@ -115,13 +124,41 @@ def lookup_user(
     if not row:
         return ToolResult(success=False, error_code="USER_NOT_FOUND", error_message="User not found.")
 
+    target_uid = row["user_id"]
+    target_email = row["email"]
+
+    # 1. Authenticated session: enforce self-ownership
+    if session.authenticated_user_id:
+        if target_uid != session.authenticated_user_id:
+            return ToolResult(
+                success=False,
+                error_code="ACCESS_DENIED",
+                error_message="Access denied: You do not have permission to view this customer profile.",
+            )
+        # Authenticated owner: full profile
+        return ToolResult(
+            success=True,
+            data={
+                "user_id": row["user_id"],
+                "username": row["username"],
+                "email": row["email"],
+                "status": row["status"],
+            },
+        )
+
+    # 2. Unauthenticated session: prevent full profile/email enumeration
+    # Return masked email for pre-authentication / ID recovery without leaking full PII
+    parts = target_email.split("@")
+    masked_email = parts[0][:1] + "***@" + parts[1] if len(parts) == 2 else "***"
+
     return ToolResult(
         success=True,
         data={
             "user_id": row["user_id"],
             "username": row["username"],
-            "email": row["email"],
+            "email": masked_email,
             "status": row["status"],
+            "is_public_view": True,
         },
     )
 
@@ -178,7 +215,17 @@ def lookup_order(
     order_id: str,
 ) -> ToolResult:
     """
-    Look up order details, line items, and existing refund history.
+    Look up order details, status, line items, and existing refund history.
+
+    Privacy & Access Rules:
+    - If unauthenticated:
+      - Returns non-sensitive public fulfillment milestones (status, created_at, delivered_at).
+      - Masks shipping address and customer ID.
+      - Omits line items and financial refund history.
+    - If authenticated:
+      - If order belongs to authenticated user: returns full details.
+      - If order belongs to another customer: denied with generic ACCESS_DENIED.
+        Does NOT reveal third-party owner identity or existence details.
     """
     cursor = session.conn.cursor()
     cursor.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,))
@@ -187,26 +234,106 @@ def lookup_order(
     if not order_row:
         return ToolResult(success=False, error_code="ORDER_NOT_FOUND", error_message=f"Order {order_id} not found.")
 
-    # Retrieve line items
+    order_dict = dict(order_row)
+    owner_id = order_dict["user_id"]
+
+    # 1. Unauthenticated Anonymous Query: Public Tracking Only (PII Masked)
+    if not session.authenticated_user_id:
+        return ToolResult(
+            success=True,
+            data={
+                "order": {
+                    "order_id": order_dict["order_id"],
+                    "status": order_dict["status"],
+                    "created_at": order_dict["created_at"],
+                    "delivered_at": order_dict.get("delivered_at"),
+                    "shipping_address": "*** Masked for privacy (authenticate to view) ***",
+                    "user_id": "***",
+                },
+                "is_public_view": True,
+            },
+        )
+
+    # 2. Authenticated Cross-Account Query: Access Denied without leaking owner identity
+    if session.authenticated_user_id != owner_id:
+        return ToolResult(
+            success=False,
+            error_code="ACCESS_DENIED",
+            error_message=f"Access denied: You do not have permission to view order details for order {order_id}.",
+        )
+
+    # 3. Authenticated Owner: Full Authorized Order View
     cursor.execute("SELECT * FROM order_items WHERE order_id = ?", (order_id,))
     items = [dict(row) for row in cursor.fetchall()]
 
-    # Retrieve refunds
     cursor.execute("SELECT * FROM refunds WHERE order_id = ?", (order_id,))
     refunds = [dict(row) for row in cursor.fetchall()]
 
     # Calculate financial totals
     total_refunded = sum(r["amount_cents"] for r in refunds if r["status"] == "approved")
-    remaining_refundable = order_row["total_amount_cents"] - total_refunded
+    remaining_refundable = order_dict["total_amount_cents"] - total_refunded
 
     return ToolResult(
         success=True,
         data={
-            "order": dict(order_row),
+            "order": order_dict,
             "items": items,
             "refunds": refunds,
             "total_refunded_cents": total_refunded,
             "remaining_refundable_cents": remaining_refundable,
+            "is_public_view": False,
+        },
+    )
+
+
+def list_orders(
+    session: SessionContext,
+    user_id: str | None = None,
+) -> ToolResult:
+    """
+    List all orders for a customer. Read-only.
+    Strictly requires customer authentication to protect customer order history and PII.
+    If authenticated, returns orders strictly for the authenticated user.
+    If an explicit user_id is provided that does not match authenticated_user_id,
+    access is strictly denied.
+    """
+    if not session.authenticated_user_id:
+        return ToolResult(
+            success=False,
+            error_code="AUTHENTICATION_REQUIRED",
+            error_message="Customer authentication is required to list order history.",
+        )
+
+    if user_id and user_id != session.authenticated_user_id:
+        return ToolResult(
+            success=False,
+            error_code="CROSS_USER_ACCESS_DENIED",
+            error_message=(
+                f"Access denied: Active session is authenticated for customer {session.authenticated_user_id}. "
+                f"Cannot query order history for {user_id}."
+            ),
+        )
+
+    target_user_id = session.authenticated_user_id
+
+    cursor = session.conn.cursor()
+    cursor.execute(
+        """
+        SELECT order_id, created_at, user_id, status, shipping_address, total_amount_cents, delivered_at
+        FROM orders
+        WHERE user_id = ?
+        ORDER BY created_at ASC;
+        """,
+        (target_user_id,),
+    )
+    rows = cursor.fetchall()
+
+    return ToolResult(
+        success=True,
+        data={
+            "user_id": target_user_id,
+            "order_count": len(rows),
+            "orders": [dict(r) for r in rows],
         },
     )
 
@@ -326,8 +453,93 @@ def cancel_order(
             error_message=f"Cannot cancel order with status '{order_row['status']}'. Only 'pending' orders can be cancelled.",
         )
 
+    # 4. Deterministic Fail-Closed Action-Scope Guard
+    # Whole-order cancellation strictly requires verified, trusted FULL_ORDER scope.
+    # Any absent, unset, expired, ambiguous, partial, or invalid action scope fails closed.
+    from runwise.domain.authorization import ActionScope
+    action_scope = session.get_action_scope("cancel_order", order_id)
+    if action_scope != ActionScope.FULL_ORDER:
+        scope_str = (
+            action_scope.value
+            if isinstance(action_scope, ActionScope)
+            else (str(action_scope) if action_scope is not None else "UNSET/ABSENT")
+        )
+        _record_audit(
+            session,
+            "MUTATION_BLOCKED",
+            "cancel_order",
+            "ACTION_SCOPE_MISMATCH",
+            {
+                "order_id": order_id,
+                "scope": scope_str,
+                "reason": f"Request action scope is '{scope_str}'. Whole-order cancellation requires explicit, verified FULL_ORDER authorization.",
+            },
+            user_id=order_row["user_id"],
+            order_id=order_id,
+            idempotency_key=idempotency_key,
+        )
+        return ToolResult(
+            success=False,
+            error_code="ACTION_SCOPE_MISMATCH",
+            error_message=(
+                f"Cannot cancel full order {order_id}: Request scope is restricted to {scope_str}. "
+                f"Partial item cancellations or unverified scopes cannot be fulfilled via full-order cancellation."
+            ),
+        )
+
+    # 5. Check Authorization Boundary (Trusted, Server-Controlled Confirmation)
+    is_explicitly_authorized = (
+        ("cancel_order", order_id) in session.authorized_explicit_actions
+        or ("cancel_order", "*") in session.authorized_explicit_actions
+    )
+    confirmed_action = session.get_confirmed_action("cancel_order", order_id, scope=ActionScope.FULL_ORDER)
+
+    if not is_explicitly_authorized and not confirmed_action:
+        policy_snapshot = {
+            "order_id": order_id,
+            "status": order_row["status"],
+            "eligible_for_cancellation": True,
+        }
+        action_id = f"act_{uuid.uuid4().hex[:12]}"
+        pending = PendingAction(
+            action_id=action_id,
+            action_type="cancel_order",
+            order_id=order_id,
+            customer_id=order_row["user_id"],
+            amount_cents=None,
+            details={"reason": reason, "idempotency_key": idempotency_key},
+            policy_snapshot=policy_snapshot,
+            created_at_iso=session.current_time_iso,
+            status=ActionStatus.PENDING,
+        )
+        session.stage_pending_action(pending)
+        _record_audit(
+            session, "MUTATION_BLOCKED", "cancel_order", "CONFIRMATION_REQUIRED",
+            {"action_id": action_id, "policy_snapshot": policy_snapshot},
+            user_id=order_row["user_id"], order_id=order_id, idempotency_key=idempotency_key,
+        )
+        return ToolResult(
+            success=False,
+            error_code="CONFIRMATION_REQUIRED",
+            data={
+                "action_id": action_id,
+                "action_type": "cancel_order",
+                "order_id": order_id,
+                "customer_id": order_row["user_id"],
+                "status": "PENDING",
+                "policy_snapshot": policy_snapshot,
+            },
+            error_message=(
+                f"Action 'cancel_order' for order {order_id} requires explicit customer confirmation. "
+                f"A pending action (ID: {action_id}) has been created. "
+                "Explain the cancellation options and ask for customer confirmation before proceeding."
+            ),
+        )
+
     # Execute mutation
     cursor.execute("UPDATE orders SET status = 'cancelled' WHERE order_id = ?", (order_id,))
+    if confirmed_action:
+        session.consume_confirmed_action(confirmed_action)
     session.conn.commit()
 
     _record_audit(
@@ -442,6 +654,67 @@ def issue_refund(
             error_message=f"Requested refund of {amount_cents} cents exceeds remaining refundable balance of {remaining_balance} cents.",
         )
 
+    # 8. Check Authorization Boundary (Trusted, Server-Controlled Confirmation)
+    is_explicitly_authorized = (
+        ("issue_refund", order_id) in session.authorized_explicit_actions
+        or ("issue_refund", "*") in session.authorized_explicit_actions
+        or ("*", "*") in session.authorized_explicit_actions
+    )
+    confirmed_action = session.get_confirmed_action("issue_refund", order_id, amount_cents)
+
+    if not is_explicitly_authorized and not confirmed_action:
+        policy_snapshot = {
+            "order_id": order_id,
+            "status": order_row["status"],
+            "delivered_at": order_row["delivered_at"],
+            "days_since_delivery": days_since_delivery,
+            "total_amount_cents": order_row["total_amount_cents"],
+            "already_refunded_cents": already_refunded,
+            "remaining_balance_cents": remaining_balance,
+            "eligible_status": True,
+            "within_30_days": True,
+            "sufficient_balance": True,
+        }
+
+        action_id = f"act_{uuid.uuid4().hex[:12]}"
+        pending = PendingAction(
+            action_id=action_id,
+            action_type="issue_refund",
+            order_id=order_id,
+            customer_id=order_row["user_id"],
+            amount_cents=amount_cents,
+            details={"reason": reason, "idempotency_key": idempotency_key},
+            policy_snapshot=policy_snapshot,
+            created_at_iso=session.current_time_iso,
+            status=ActionStatus.PENDING,
+        )
+        session.stage_pending_action(pending)
+
+        _record_audit(
+            session, "MUTATION_BLOCKED", "issue_refund", "CONFIRMATION_REQUIRED",
+            {"action_id": action_id, "amount_cents": amount_cents, "policy_snapshot": policy_snapshot},
+            user_id=order_row["user_id"], order_id=order_id, idempotency_key=idempotency_key,
+        )
+
+        return ToolResult(
+            success=False,
+            error_code="CONFIRMATION_REQUIRED",
+            data={
+                "action_id": action_id,
+                "action_type": "issue_refund",
+                "order_id": order_id,
+                "customer_id": order_row["user_id"],
+                "amount_cents": amount_cents,
+                "status": "PENDING",
+                "policy_snapshot": policy_snapshot,
+            },
+            error_message=(
+                f"Financial action 'issue_refund' for order {order_id} ({amount_cents} cents) requires explicit customer confirmation. "
+                f"A pending action (ID: {action_id}) has been created. "
+                "Do NOT execute the refund. Explain the available options and refund amount to the customer, and request their explicit confirmation."
+            ),
+        )
+
     # 8. Execute Refund
     refund_id = f"REF-{uuid.uuid4().hex[:8].upper()}"
     ts = int(current_dt.timestamp())
@@ -454,6 +727,8 @@ def issue_refund(
         """,
         (refund_id, order_id, amount_cents, reason, idempotency_key, ts),
     )
+    if confirmed_action:
+        session.consume_confirmed_action(confirmed_action)
     session.conn.commit()
 
     _record_audit(

@@ -8,6 +8,7 @@ from runwise.domain.model import SessionContext
 from runwise.domain.tools import (
     cancel_order,
     issue_refund,
+    list_orders,
     lookup_order,
     lookup_user,
     update_shipping_address,
@@ -21,24 +22,39 @@ FROZEN_CLOCK = "2026-10-15T12:00:00Z"
 def create_test_session(authenticated_user_id: str | None = None) -> SessionContext:
     """Helper to spin up an ephemeral sandbox connection and session."""
     conn = SandboxDB.create_connection()
-    return SessionContext(
+    session = SessionContext(
         conn=conn,
         trial_id="trial_tool_test_01",
         current_time_iso=FROZEN_CLOCK,
         authenticated_user_id=authenticated_user_id,
     )
+    if authenticated_user_id:
+        session.authorize_action("*", "*")
+    return session
 
 
 def test_lookup_user_unauthorized_does_not_authenticate():
-    """Verify lookup_user returns profile data but does NOT grant session auth."""
+    """Verify lookup_user returns public profile data with masked email and does NOT grant session auth."""
     session = create_test_session()
     result = lookup_user(session, user_id="CUST-001")
 
     assert result.success is True
-    assert result.data["email"] == "alice@example.com"
+    # Email is masked to prevent unrestricted PII harvesting
+    assert result.data["email"] == "a***@example.com"
+    assert result.data["is_public_view"] is True
     # Session must still be unauthorized
     assert session.authenticated_user_id is None
     assert session.is_authorized("CUST-001") is False
+
+
+def test_lookup_user_authenticated_owner():
+    """Verify authenticated owner gets unmasked full profile."""
+    session = create_test_session(authenticated_user_id="CUST-001")
+    result = lookup_user(session, user_id="CUST-001")
+
+    assert result.success is True
+    assert result.data["email"] == "alice@example.com"
+    assert result.data["username"] == "alice_smith"
 
 
 def test_verify_customer_authenticates_session():
@@ -71,6 +87,7 @@ def test_cancel_order_requires_auth():
 def test_cancel_order_success():
     """Authenticated cancellation of a pending order succeeds and updates DB."""
     session = create_test_session(authenticated_user_id="CUST-001")
+    session.authorize_action("cancel_order", "ORD-101")
     result = cancel_order(session, order_id="ORD-101", reason="No longer needed", idempotency_key="k2")
 
     assert result.success is True
@@ -151,3 +168,48 @@ def test_refund_idempotency_deduplication():
     cursor.execute("SELECT COUNT(*) FROM refunds WHERE idempotency_key = 'idemp_key_999'")
     count = cursor.fetchone()[0]
     assert count == 1
+
+
+def test_list_orders_unauthenticated_fails():
+    """Verify list_orders strictly blocks unauthenticated calls even if user_id is provided."""
+    session = create_test_session()
+    result = list_orders(session, user_id="CUST-002")
+
+    assert result.success is False
+    assert result.error_code == "AUTHENTICATION_REQUIRED"
+
+
+def test_list_orders_authenticated_session():
+    """Verify list_orders returns orders for authenticated session customer."""
+    session = create_test_session(authenticated_user_id="CUST-001")
+    result = list_orders(session)
+
+    assert result.success is True
+    orders = result.data["orders"]
+    order_ids = [o["order_id"] for o in orders]
+    assert "ORD-101" in order_ids
+    assert "ORD-102" in order_ids
+    assert len(orders) == 2
+
+
+def test_list_orders_cross_user_access_denied():
+    """Verify authenticated user cannot query orders belonging to another customer."""
+    session = create_test_session(authenticated_user_id="CUST-001")
+    result = list_orders(session, user_id="CUST-002")
+
+    assert result.success is False
+    assert result.error_code == "CROSS_USER_ACCESS_DENIED"
+
+
+def test_list_orders_matching_user_id_succeeds():
+    """Verify authenticated user querying their own user_id explicitly succeeds."""
+    session = create_test_session(authenticated_user_id="CUST-002")
+    result = list_orders(session, user_id="CUST-002")
+
+    assert result.success is True
+    orders = result.data["orders"]
+    order_ids = [o["order_id"] for o in orders]
+    assert "ORD-103" in order_ids
+    assert "ORD-104" in order_ids
+    assert len(orders) == 2
+

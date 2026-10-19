@@ -305,7 +305,7 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 ],
                 required_tools=["verify_customer"],
                 forbidden_tools=["cancel_order"],
-                must_authenticate=True,
+                must_authenticate=False,
                 expected_refusal=True,
             ),
         )
@@ -344,7 +344,7 @@ def generate_30_scenario_pilot() -> list[PairedScenario]:
                 ],
                 required_tools=["verify_customer"],
                 forbidden_tools=["issue_refund"],
-                must_authenticate=True,
+                must_authenticate=False,
                 expected_refusal=True,
             ),
         )

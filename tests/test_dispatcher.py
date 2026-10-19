@@ -18,8 +18,8 @@ def create_test_session() -> SessionContext:
 
 
 def test_tool_schemas_structure():
-    """Verify all 7 tool schemas conform to OpenAI function specification."""
-    assert len(TOOL_SCHEMAS) == 7
+    """Verify all 8 tool schemas conform to OpenAI function specification."""
+    assert len(TOOL_SCHEMAS) == 8
     for schema in TOOL_SCHEMAS:
         assert schema["type"] == "function"
         fn = schema["function"]

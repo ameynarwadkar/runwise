@@ -41,6 +41,11 @@ class ExpectedBehavior(BaseModel):
     must_authenticate: bool = False
     expected_refusal: bool = False
     auth_before_mutation: bool = True
+    expected_tool_order: list[str] = Field(default_factory=list)
+    allowed_tool_paths: list[list[str]] = Field(default_factory=list)
+    factual_patterns: list[str] = Field(default_factory=list)
+    explanation_patterns: list[str] = Field(default_factory=list)
+    refusal_patterns: list[str] = Field(default_factory=list)
     grounded_response_keywords: list[str] = Field(default_factory=list)
 
 
@@ -113,5 +118,12 @@ class PairedScenario(BaseModel):
                 must_authenticate=self.expected.must_authenticate,
                 expected_refusal=self.expected.expected_refusal,
                 requires_judge=False,
+                expected_tool_order=self.expected.expected_tool_order,
+                allowed_tool_paths=self.expected.allowed_tool_paths,
+                factual_patterns=self.expected.factual_patterns,
+                explanation_patterns=self.expected.explanation_patterns,
+                refusal_patterns=self.expected.refusal_patterns,
+                grounded_response_keywords=self.expected.grounded_response_keywords,
+                auth_before_mutation=self.expected.auth_before_mutation,
             ),
         )

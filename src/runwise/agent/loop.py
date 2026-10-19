@@ -21,6 +21,7 @@ from runwise.agent.dispatcher import TOOL_SCHEMAS, dispatch_tool_call
 from runwise.agent.trajectory import ExitReason, TokenUsage, Trajectory
 from runwise.config import get_provider_config
 from runwise.domain.model import SessionContext
+from runwise.domain.authorization import ActionScope, ORDER_ID_PATTERN, classify_request_intent
 from runwise.observability.tracer import trace_span
 
 # Path to the versioned system prompt template
@@ -116,6 +117,20 @@ class AgentLoop:
         }
         if request_id:
             trajectory_metadata["request_id"] = request_id
+
+        # Classify user prompt intent and grant explicit transaction authorization if directive
+        intent = classify_request_intent(user_prompt)
+        session.request_intent = intent.intent_type
+        order_matches = set(m.upper() for m in ORDER_ID_PATTERN.findall(user_prompt))
+
+        if intent.is_explicit_transaction and intent.authorized_actions:
+            for act_type, oid in intent.authorized_actions:
+                session.authorize_action(act_type, oid, scope=intent.action_scope)
+        else:
+            # Informational inquiry, ambiguous scope, or partial cancellation:
+            # Strictly record restricted scope for all referenced orders so whole-order cancellation fails closed
+            for oid in order_matches:
+                session.set_action_scope("cancel_order", oid, intent.action_scope)
 
         trajectory = Trajectory(
             task_id=task_id,
