@@ -620,8 +620,15 @@ def run_canonical_benchmark_suite(
     resolved_dirs = {}
     for step in checkpoint_steps:
         step_dir = resolve_checkpoint_dir(adapters_dir, step)
+        h = compute_adapter_hashes(step_dir)
+        if not h.get("adapter_config.json"):
+            files_found = os.listdir(step_dir) if os.path.isdir(step_dir) else "directory missing"
+            raise FileNotFoundError(
+                f"Checkpoint step {step} at '{step_dir}' is missing 'adapter_config.json'! "
+                f"Files found in directory: {files_found}"
+            )
         resolved_dirs[step] = step_dir
-        adapter_hashes[f"step_{step}"] = compute_adapter_hashes(step_dir)
+        adapter_hashes[f"step_{step}"] = h
 
     print("\nRecorded Adapter Artifact Hashes:")
     for k, v in adapter_hashes.items():
