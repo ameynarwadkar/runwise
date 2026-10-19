@@ -289,15 +289,17 @@ def evaluate_canonical_dev_suite(
     if hasattr(eval_model, "gradient_checkpointing_disable"):
         eval_model.gradient_checkpointing_disable()
 
+    context_manager = torch.no_grad()
     if disable_adapter:
-        if hasattr(eval_model, "disable_adapter"):
-            context_manager = eval_model.disable_adapter()
-        elif hasattr(eval_model, "disable_adapters"):
-            context_manager = eval_model.disable_adapters()
-        else:
-            context_manager = torch.no_grad()
-    else:
-        context_manager = torch.no_grad()
+        # Only call disable_adapter/disable_adapters if the model actually has active PEFT adapters
+        if hasattr(eval_model, "peft_config") and getattr(eval_model, "peft_config", None):
+            try:
+                if hasattr(eval_model, "disable_adapter"):
+                    context_manager = eval_model.disable_adapter()
+                elif hasattr(eval_model, "disable_adapters"):
+                    context_manager = eval_model.disable_adapters()
+            except (ValueError, AttributeError):
+                context_manager = torch.no_grad()
 
     trial_results = []
     e2e_pass_count = 0
@@ -602,11 +604,23 @@ def run_canonical_benchmark_suite(
     # 2. Setup PEFT Model for Checkpoints
     from peft import PeftModel
 
+    def resolve_checkpoint_dir(base_dir: str, st: int | str) -> str:
+        candidates = [
+            f"checkpoint_step_{st}",
+            f"checkpoint_step_{int(st):03d}",
+            f"checkpoint_step_{int(st):02d}",
+        ]
+        for c in candidates:
+            p = os.path.join(base_dir, c)
+            if os.path.isdir(p):
+                return p
+        raise FileNotFoundError(f"Checkpoint directory not found for step {st} in {base_dir} (tried {candidates})")
+
     adapter_hashes = {}
+    resolved_dirs = {}
     for step in checkpoint_steps:
-        step_dir = os.path.join(adapters_dir, f"checkpoint_step_{step}")
-        if not os.path.isdir(step_dir):
-            raise FileNotFoundError(f"Checkpoint directory not found: {step_dir}")
+        step_dir = resolve_checkpoint_dir(adapters_dir, step)
+        resolved_dirs[step] = step_dir
         adapter_hashes[f"step_{step}"] = compute_adapter_hashes(step_dir)
 
     print("\nRecorded Adapter Artifact Hashes:")
@@ -615,7 +629,7 @@ def run_canonical_benchmark_suite(
 
     # Load first adapter to wrap base model
     first_step = checkpoint_steps[0]
-    first_dir = os.path.join(adapters_dir, f"checkpoint_step_{first_step}")
+    first_dir = resolved_dirs[first_step]
     peft_model = PeftModel.from_pretrained(
         base_model,
         first_dir,
@@ -624,7 +638,7 @@ def run_canonical_benchmark_suite(
 
     # Load remaining adapters into peft_model
     for step in checkpoint_steps[1:]:
-        step_dir = os.path.join(adapters_dir, f"checkpoint_step_{step}")
+        step_dir = resolved_dirs[step]
         peft_model.load_adapter(step_dir, adapter_name=f"checkpoint_step_{step}")
 
     # Evaluate each checkpoint independently
