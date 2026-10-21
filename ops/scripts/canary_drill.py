@@ -1,7 +1,7 @@
 """
 End-to-End Canary Rollout, SLO Breach Detection, and Automated Rollback Drill.
 
-Executes a full operational drill according to llmops.md:
+Executes a full operational drill:
 1. Canary Deployment: Activates candidate prompt v2.0 at 50% traffic weight.
 2. Traffic Splitting: Validates session-consistent traffic distribution across sessions.
 3. Anomaly Detection: Detects a simulated p95 latency SLO breach (> 3000ms).

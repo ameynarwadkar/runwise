@@ -1,9 +1,9 @@
 """
 Statistical Reliability and Evaluation Metrics Engine.
 
-Implements rigorous evaluation metrics from tau-bench and evals.md:
-1. pass^k (Consensus / Deterministic reliability: probability all k trials succeed)
-2. pass@k (Exploration / Best-of-k: probability at least one trial succeeds)
+Implements evaluation metrics for agent workflows:
+1. pass^k (Consensus reliability: probability all k trials succeed)
+2. pass@k (Exploration: probability at least one trial succeeds)
 3. Flip Rate (Diagnostic noise floor measuring run-to-run instability)
 4. Granular breakdowns by operational category and task difficulty.
 """

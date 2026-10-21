@@ -1,7 +1,7 @@
 """
 Token Economics & Cost Modeling Engine.
 
-Implements rigorous cost analytics and capacity projections according to llmops.md:
+Implements cost analytics and capacity projections:
 1. Provider Price Cards: Official per-million token rates for Gemini 2.5 Flash, Pro, etc.
 2. Unit Economics: Cost per request and cost per 1,000 successful requests.
 3. Cost Dominance Analysis: Evaluates input vs output token cost distribution.

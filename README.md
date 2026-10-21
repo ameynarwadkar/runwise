@@ -1,7 +1,8 @@
 # Runwise: Production-Grade Customer Support Agent & LLMOps Service
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![Test Suite](https://img.shields.io/badge/tests-151%2F151%20passing-brightgreen.svg)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-158%2F158%20passing-brightgreen.svg)](tests/)
+[![Live Demo](https://img.shields.io/badge/demo-runwise.vercel.app-orange.svg)](https://runwise.vercel.app)
 [![Benchmark Reliability](https://img.shields.io/badge/eval%20pass%20rate-100.0%25-success.svg)](docs/BENCHMARK_REPORT.md)
 [![Cost Optimization](https://img.shields.io/badge/prompt%20cost%20drop--33.2%25-blueviolet.svg)](docs/CAPACITY_AND_COST.md)
 [![Observability](https://img.shields.io/badge/OTel%20%7C%20Prometheus-instrumented-orange.svg)](ops/)
@@ -13,7 +14,7 @@ It implements a complete enterprise LLMOps lifecycle: 4-tier evaluation grading,
 
 ---
 
-## 1. Headline Numbers Above the Fold
+## 1. System Performance & Reliability Benchmarks
 
 Every production performance metric measured against an established baseline:
 
@@ -22,7 +23,7 @@ Every production performance metric measured against an established baseline:
 | **Benchmark Accuracy** | 94.3% (Initial Dev Run) | **100.0%** (50 tasks / 150 trials) | **+5.7%** (0.0% holdout generalization gap) |
 | **Cost per 1k Successes** | $0.0786 (`v1.0` Prompt) | **$0.0525** (`v1.1_trimmed`) | **-33.2%** direct LLM cost reduction |
 | **System Prompt Tokens** | 808 tokens (~2,502 chars) | **460 tokens** (~1,177 chars) | **-43.1%** input token compression |
-| **Automated Test Suite** | 0 tests | **151 / 151 passed** | **100% test coverage** across 28 modules |
+| **Automated Test Suite** | 0 tests | **158 / 158 passed** | **100% test coverage** across 29 modules |
 | **Availability (SLO)** | $\ge 99.0\%$ | **100.0%** | Zero 5xx errors under concurrent load |
 | **Canary Rollback Speed**| 5–10 min (container rebuild) | **< 200 ms** (dynamic hot-reload) | **Instant zero-rebuild rollback** |
 | **Cost-Aware Auto-Routing** | $8.33 / 1k (Always Pro) | **$3.54 / 1k** (Adaptive Router)* | **-57.5% cost**, **-63.0% p50 latency** (3.82s vs 10.33s) at 100% accuracy (*trace replay) |
@@ -40,7 +41,7 @@ To ensure absolute technical credibility, all numbers in this repository are cat
 - **-33.2% Prompt Cost Reduction**: Empirically measured via `ops/scripts/compare_prompts.py`. The compressed prompt (`v1.1_trimmed.yaml`) reduced characters from 2,502 to 1,177 (-53.0%) and prompt tokens from 808 to 460 (-43.1%), verified to preserve 100% of policy and safety invariants.
 - **-57.5% Auto-Routing Cost Reduction**: Evaluated across 35 dev tasks in [ROUTING_REPORT.md](docs/ROUTING_REPORT.md). Baselines 1 & 2 measured via live Google Cloud Vertex AI inference; Strategy 4 verified via empirical trace replay over live baseline trajectories, reducing cost from $8.33 to $3.54 / 1k requests and p50 latency from 10.33s to 3.82s (-63.0%) with 100% task accuracy.
 - **Concurrency Performance**: Measured using headless Locust load tests simulating multi-user customer support traffic against the running service, logging **0 errors (100% availability)** across 20 concurrent sessions with **4.04s p95 reasoning latency** and **28,052 tokens processed**.
-- **146 Passing Unit/Integration Tests**: Executed across 27 modules validating schemas, session contexts, gateway failovers, auto-routing classification, and Prometheus metrics.
+- **158 Passing Unit, Integration & Security Tests**: Executed across 29 modules validating schemas, session contexts, gateway failovers, auto-routing classification, IP rate limiting, and Prometheus metrics.
 ### B. Controlled Fault-Injection Drills (Operational Demonstrations)
 - **CI/CD Evaluation Gate Rejection Drill**: To prove the CI pipeline stops bad deploys, a synthetic regression candidate with a 5.0% accuracy drop and +34.5% latency spike was fed to `runwise.evals.gate`. The gate successfully failed with exit code 1 and generated a blocking GitHub Step Summary table.
 - **Canary Latency SLO Breach & Instant Rollback Drill**: To demonstrate sub-200ms disaster recovery, `ops/scripts/canary_drill.py` deployed canary `v2.0` at 50% traffic weight, simulated a 3,420ms latency breach (> 3,000ms SLO), triggered `ops/scripts/rollback.py`, and verified 10/10 subsequent customer sessions instantly recovered to stable with zero container restarts.
@@ -123,7 +124,7 @@ cd ..
 
 ### 4.3 Running the Full Backend Test Suite
 ```powershell
-# Run all 151 unit, integration, and demo API tests
+# Run all 158 unit, integration, and security tests
 uv run pytest tests/ -v
 ```
 
@@ -140,13 +141,23 @@ npm run dev
 ```
 - **Portfolio Landing Page**: [http://localhost:3000](http://localhost:3000)
 - **Live Agent Playground**: [http://localhost:3000/demo](http://localhost:3000/demo)
-```
 
 Verify health:
 ```powershell
 curl.exe -i http://127.0.0.1:8000/healthz
 curl.exe -i http://127.0.0.1:8000/readyz
 ```
+
+### 4.6 Public Production Deployment (Vercel + Render)
+
+Runwise is configured for zero-cost, serverless-edge deployment:
+- **Frontend (Vercel)**: Next.js 15 App Router on Vercel edge network, configured via [`frontend/vercel.json`](frontend/vercel.json).
+- **Backend (Render)**: FastAPI Python 3.11 web service deployed via [`render.yaml`](render.yaml) on Render Free Tier with in-memory IP rate limiting and safe proxy header handling.
+- **Replay-Only Public Demo Mode (`RUNWISE_DEMO_MODE=replay`)**: Public demo mode serves genuine recorded benchmark trajectories (exact token economics, reasoning latencies, and Tier 1-3 deterministic grader verdicts). Arbitrary live model inference and administrative endpoints are disabled to guarantee zero cloud spend.
+
+**To deploy your own instance:**
+1. **Deploy Backend to Render**: Connect your GitHub repository to Render using [`render.yaml`](render.yaml). Set `CORS_ALLOWED_ORIGINS` to your Vercel URL.
+2. **Deploy Frontend to Vercel**: Import the `frontend/` directory into Vercel. Set `FASTAPI_URL` to your Render service URL and `NEXT_PUBLIC_DEMO_MODE=replay`.
 
 ---
 
@@ -195,11 +206,15 @@ docker compose ps
 | :--- | :--- |
 | [RUNBOOK.md](RUNBOOK.md) | On-call triage guide for all Prometheus alerts, mitigation steps, and escalation paths. |
 | [postmortems/001-canary-latency-slo-breach.md](postmortems/001-canary-latency-slo-breach.md) | Blameless postmortem of the Canary p95 Latency breach incident and recovery. |
-| [docs/CAPACITY_AND_COST.md](docs/CAPACITY_AND_COST.md) | Comprehensive capacity planning, token economics, and load-test benchmark data. |
 | [docs/BENCHMARK_REPORT.md](docs/BENCHMARK_REPORT.md) | Full 50-task evaluation benchmark report across Dev and Holdout splits. |
 | [docs/ROUTING_REPORT.md](docs/ROUTING_REPORT.md) | 4-Way auto-routing benchmark analysis, empirical trace replay, and cost evaluation. |
-| [docs/superpowers/specs/2026-10-18-runwise-public-website-design.md](docs/superpowers/specs/2026-10-18-runwise-public-website-design.md) | Approved Public Website & Live Playground Architecture & System Design Specification. |
-| [docs/superpowers/plans/2026-10-18-runwise-public-website.md](docs/superpowers/plans/2026-10-18-runwise-public-website.md) | Phased Implementation & Acceptance Testing Plan. |
+| [docs/CAPACITY_AND_COST.md](docs/CAPACITY_AND_COST.md) | Comprehensive capacity planning, token economics, and load-test benchmark data. |
+| [docs/specs/agent-eval-harness-design.md](docs/specs/agent-eval-harness-design.md) | Customer Support Agent & 4-tier evaluation harness design specification. |
+| [docs/specs/semantic-model-router-design.md](docs/specs/semantic-model-router-design.md) | Cost-aware semantic model router architecture & calibration design. |
+| [docs/specs/public-website-design.md](docs/specs/public-website-design.md) | Public website & interactive playground architecture & defense-in-depth design. |
+| [docs/resources.md](docs/resources.md) | Curated literature and engineering references (LLMOps, evals, routing). |
+| [render.yaml](render.yaml) | Render Web Service Infrastructure-as-Code specification. |
+| [frontend/vercel.json](frontend/vercel.json) | Vercel edge deployment and security header configuration. |
 | [ops/prometheus/alerts.yml](ops/prometheus/alerts.yml) | Production Prometheus alerting rules (Error Budget Burn, Latency SLO, Gateway Failover). |
 | [ops/grafana/dashboard.json](ops/grafana/dashboard.json) | Provisioned Grafana dashboard definition with live SLO and Canary panels. |
 
@@ -207,4 +222,6 @@ docker compose ps
 
 ## 7. License
 
-Apache 2.0. Built with engineering rigor by the Runwise Engineering Team.
+Apache 2.0. Built with engineering rigor by [Amey Narwadkar](https://github.com/ameynarwadkar).
+
+

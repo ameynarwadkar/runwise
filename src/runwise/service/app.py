@@ -12,6 +12,7 @@ Exposes endpoints for:
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
@@ -25,6 +26,7 @@ from runwise.service.gateway import ModelGateway
 from runwise.service.canary import CanaryRouter, get_canary_router
 from runwise.service.cost import calculate_cost_breakdown
 from runwise.service.demo import build_sanitized_timeline, demo_router
+from runwise.service.rate_limiter import RateLimitMiddleware
 from runwise.service.metrics import (
     ACTIVE_SESSIONS,
     AGENT_RUN_DURATION_SECONDS,
@@ -103,16 +105,24 @@ def create_app(
     # 1. Mount Observability and Request Correlation Middleware
     app.add_middleware(ObservabilityMiddleware)
 
-    # 2. Configure CORS for frontend access
+    # 2. Mount Sliding-Window Rate Limiting Middleware (30 reqs/minute per client IP)
+    app.add_middleware(RateLimitMiddleware, requests_per_minute=30)
+
+    # 3. Configure CORS for explicitly trusted frontend origins
+    raw_origins = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
 
-    # 3. Mount Public Demo & Scenario Endpoints
+    # 4. Mount Public Demo & Scenario Endpoints
     app.include_router(demo_router)
 
     # 4. Initialize state components
@@ -169,11 +179,24 @@ def create_app(
                 detail=f"Database sandbox check failed: {exc}",
             )
 
-        # 2. Verify provider configuration
+        # 2. In public replay mode, return ready without requiring live provider credentials
+        demo_mode = os.getenv("RUNWISE_DEMO_MODE", "live").lower()
+        if demo_mode in ("replay", "public", "demo"):
+            return {
+                "status": "ready",
+                "mode": "replay",
+                "provider": "vertex_ai",
+                "model": "vertex_ai/gemini-2.5-flash (replay)",
+                "database": db_status,
+                "active_sessions": manager.active_session_count(),
+            }
+
+        # 3. Verify provider configuration for live execution
         cfg = get_provider_config()
 
         return {
             "status": "ready",
+            "mode": "live",
             "provider": cfg.provider,
             "model": cfg.model_identifier,
             "database": db_status,
@@ -219,6 +242,17 @@ def create_app(
         4. Returns the agent's textual response and operational trajectory telemetry.
         """
         try:
+            # In public replay mode, disallow arbitrary unauthenticated live inference to guarantee zero spend
+            demo_mode = os.getenv("RUNWISE_DEMO_MODE", "live").lower()
+            if demo_mode in ("replay", "public", "demo"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Live model inference is disabled in public replay-only demo mode to guarantee zero cloud spend. "
+                        "Please select any pre-seeded benchmark scenario or deploy locally with your own API credentials."
+                    ),
+                )
+
             # 1. Resolve canary/variant routing decision via session-consistent hashing
             req_id = getattr(request.state, "request_id", None)
             decision = router.route(session_id=payload.session_id, request_id=req_id)
@@ -344,6 +378,8 @@ def create_app(
                 events=events,
                 evaluation=eval_summary,
             )
+        except HTTPException:
+            raise
         except Exception as exc:
             logger.exception("Error executing agent run for session %s: %s", payload.session_id, exc)
             model_for_metrics = "unknown_model"
@@ -384,51 +420,65 @@ def create_app(
             )
         return {"status": "terminated", "session_id": session_id}
 
-        # ========================================================================
+    # ========================================================================
     # CANARY & TRAFFIC MANAGEMENT ENDPOINTS
     # ========================================================================
 
-    @app.get(
-        "/v1/admin/canary/status",
-        tags=["Admin"],
-        summary="Get Canary Configuration",
-    )
-    async def get_canary_status(
-        router: CanaryRouter = Depends(get_canary_router_dep),
-    ) -> dict[str, Any]:
-        """Returns the active runtime canary traffic routing configuration."""
-        return router.config.model_dump()
+    demo_mode = os.getenv("RUNWISE_DEMO_MODE", "live").lower()
+    if demo_mode in ("replay", "public", "demo"):
+        @app.api_route(
+            "/v1/admin/{path:path}",
+            methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+            include_in_schema=False,
+        )
+        async def admin_disabled_in_public_mode(path: str) -> None:
+            """Explicitly refuses administrative operations in public demo mode."""
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Administrative endpoints are disabled in public demo mode.",
+            )
+    else:
+        @app.get(
+            "/v1/admin/canary/status",
+            tags=["Admin"],
+            summary="Get Canary Configuration",
+        )
+        async def get_canary_status(
+            router: CanaryRouter = Depends(get_canary_router_dep),
+        ) -> dict[str, Any]:
+            """Returns the active runtime canary traffic routing configuration."""
+            return router.config.model_dump()
 
-    @app.post(
-        "/v1/admin/canary/config",
-        tags=["Admin"],
-        summary="Update Canary Configuration",
-    )
-    async def update_canary_config(
-        payload: dict[str, Any],
-        router: CanaryRouter = Depends(get_canary_router_dep),
-    ) -> dict[str, Any]:
-        """Dynamically updates canary configuration at runtime without rebuild."""
-        updated = router.update_config(**payload)
-        return {"status": "updated", "config": updated.model_dump()}
+        @app.post(
+            "/v1/admin/canary/config",
+            tags=["Admin"],
+            summary="Update Canary Configuration",
+        )
+        async def update_canary_config(
+            payload: dict[str, Any],
+            router: CanaryRouter = Depends(get_canary_router_dep),
+        ) -> dict[str, Any]:
+            """Dynamically updates canary configuration at runtime without rebuild."""
+            updated = router.update_config(**payload)
+            return {"status": "updated", "config": updated.model_dump()}
 
-    @app.post(
-        "/v1/admin/canary/rollback",
-        tags=["Admin"],
-        summary="Roll Back Canary Immediately",
-    )
-    async def trigger_canary_rollback(
-        reason: str = "Manual or automated rollback triggered",
-        router: CanaryRouter = Depends(get_canary_router_dep),
-    ) -> dict[str, Any]:
-        """Immediately disables canary traffic and resets weight to 0.0."""
-        updated = router.update_config(enabled=False, weight=0.0)
-        logger.warning("Canary rollback executed. Reason: %s", reason)
-        return {
-            "status": "rolled_back",
-            "reason": reason,
-            "config": updated.model_dump(),
-        }
+        @app.post(
+            "/v1/admin/canary/rollback",
+            tags=["Admin"],
+            summary="Roll Back Canary Immediately",
+        )
+        async def trigger_canary_rollback(
+            reason: str = "Manual or automated rollback triggered",
+            router: CanaryRouter = Depends(get_canary_router_dep),
+        ) -> dict[str, Any]:
+            """Immediately disables canary traffic and resets weight to 0.0."""
+            updated = router.update_config(enabled=False, weight=0.0)
+            logger.warning("Canary rollback executed. Reason: %s", reason)
+            return {
+                "status": "rolled_back",
+                "reason": reason,
+                "config": updated.model_dump(),
+            }
 
     return app
 

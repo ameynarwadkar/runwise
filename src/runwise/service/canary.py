@@ -1,7 +1,7 @@
 """
 Dynamic Canary Traffic Router & Variant Configuration Engine.
 
-Implements session-consistent weighted traffic splitting according to llmops.md:
+Implements session-consistent weighted traffic splitting:
 - Stable vs Canary model and prompt version management.
 - Cryptographically uniform, deterministic session hashing to prevent mid-session prompt flips.
 - Zero-rebuild dynamic config updates and JSON file persistence for one-command rollbacks.

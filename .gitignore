@@ -9,8 +9,12 @@ build/
 !data/fixtures/*.sql
 results/eval_runs/*.jsonl
 .pytest_cache/
-results/runs
+results/runs/
 node_modules/
 frontend/node_modules/
 frontend/.next/
-frontend/out/
+frontend/out/
+*.tsbuildinfo
+dist/
+.coverage
+coverage/

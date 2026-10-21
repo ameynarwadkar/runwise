@@ -1,7 +1,7 @@
 """
 Evaluation Gate Engine & Regression Comparator.
 
-Automates PR regression gating against baseline metrics according to llmops.md:
+Automates PR regression gating against baseline metrics:
 1. Accuracy threshold: Blocks PR if pass rate drops by more than `max_accuracy_drop` (default 2%).
 2. Latency threshold: Blocks PR if p95 latency increases by more than `max_latency_p95_increase_ratio` (default 15%).
 3. Token/Cost threshold: Blocks PR if average tokens per trial increases by more than `max_token_increase_ratio` (default 15%).

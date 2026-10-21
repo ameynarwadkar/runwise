@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: runwise-api
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: uv run uvicorn runwise.service.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: RUNWISE_DEMO_MODE
+        value: replay
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://runwise.vercel.app,http://localhost:3000,http://127.0.0.1:3000"

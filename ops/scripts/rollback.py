@@ -1,7 +1,7 @@
 """
 One-Command Zero-Rebuild Canary Rollback Utility.
 
-Enforces instant rollback according to llmops.md:
+Enforces instant rollback:
 1. Calls the running service's /v1/admin/canary/rollback endpoint.
 2. Persists the rolled-back state to ops/canary.json to maintain stability across container restarts.
 3. Requires zero container rebuilds and zero service downtime.

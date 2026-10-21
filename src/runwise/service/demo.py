@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -360,6 +361,14 @@ async def run_scenario(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scenario '{payload.scenario_id}' not found.",
         )
+
+    # In public replay mode, return genuine verified benchmark replay immediately
+    demo_mode = os.getenv("RUNWISE_DEMO_MODE", "live").lower()
+    if demo_mode in ("replay", "public", "demo"):
+        from runwise.service.replays import get_verified_replay_response
+        replay_resp = get_verified_replay_response(payload.scenario_id)
+        if replay_resp:
+            return replay_resp
 
     # 1. Resolve AutoRouter selection
     auto_router: AutoRouter = getattr(request.app.state, "auto_router", None) or AutoRouter()
